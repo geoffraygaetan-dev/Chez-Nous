@@ -439,18 +439,19 @@ function sync(s){
 
 async function charger(){
   if(!moi){ document.getElementById('welcome').style.display='flex'; }
-  taches=DEF.slice(); hist=[];
-  afficher();
   sync('L');
   try{
     var r=await fetch(FIREBASE_URL+'/data.json');
     var j=await r.json();
-    if(j){
-      taches=j.taches||DEF.slice();
+    if(j && j.taches){
+      taches=j.taches;
       hist=j.hist||[];
+    } else {
+      taches=DEF.slice(); hist=[];
+      await sauver();
     }
     sync('');
-  }catch(e){ sync('E'); }
+  }catch(e){ taches=DEF.slice(); hist=[]; sync('E'); }
   recurrence();
   afficher();
 }
