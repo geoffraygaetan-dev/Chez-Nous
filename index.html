@@ -237,6 +237,7 @@ body{background:var(--warm);color:var(--ink);font-family:system-ui,-apple-system
       <span class="logo-name">Chez Nous</span>
     </div>
     <div class="topbar-right">
+      <button class="change-btn" id="installBtn" style="display:none" onclick="installerApp()">📲 Installer</button>
       <button class="change-btn" onclick="afficherBienvenue()">👤 Changer</button>
       <div class="sync"><div class="sdot" id="sdot"></div><span id="stxt">Sync</span></div>
     </div>
@@ -443,15 +444,16 @@ async function charger(){
   try{
     var r=await fetch(FIREBASE_URL+'/data.json');
     var j=await r.json();
-    if(j && j.taches){
-      taches=j.taches;
+    if(j && j.taches !== undefined){
+      taches=j.taches||[];
       hist=j.hist||[];
-    } else {
+    } else if(j===null){
+      // Première utilisation - sauvegarder les tâches par défaut
       taches=DEF.slice(); hist=[];
       await sauver();
     }
     sync('');
-  }catch(e){ taches=DEF.slice(); hist=[]; sync('E'); }
+  }catch(e){ sync('E'); }
   recurrence();
   afficher();
 }
@@ -802,6 +804,20 @@ setInterval(async function(){
     sync('');
   }catch(e){ sync('E'); }
 },20000);
+
+// PWA Install
+var deferredPrompt;
+window.addEventListener('beforeinstallprompt', function(e){
+  e.preventDefault();
+  deferredPrompt=e;
+  document.getElementById('installBtn').style.display='block';
+});
+function installerApp(){
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(function(){ deferredPrompt=null; document.getElementById('installBtn').style.display='none'; });
+}
+window.addEventListener('appinstalled', function(){ document.getElementById('installBtn').style.display='none'; });
 
 charger();
 </script>
