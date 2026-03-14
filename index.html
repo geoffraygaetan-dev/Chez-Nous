@@ -364,7 +364,7 @@ body{background:var(--warm);color:var(--ink);font-family:system-ui,-apple-system
 
 <script>
 var KEY = '$2a$10$2uuvzzZ7nB8e4SzCefGSAOkqD0AY660SsLiKzQWtERg4uT.eJfd1q';
-var FIREBASE_URL = 'https://cheznous-e358b-default-rtdb.europe-west1.firebasedatabase.app';
+var FIREBASE_URL = 'https://chez-nous-265db-default-rtdb.europe-west1.firebasedatabase.app';
 var taches = [], hist = [];
 var moi = localStorage.getItem('profil5') || '';
 var filtreWho = 'all', filtreCat = 'all';
@@ -444,16 +444,23 @@ async function charger(){
   try{
     var r=await fetch(FIREBASE_URL+'/data.json');
     var j=await r.json();
-    if(j && j.taches !== undefined){
-      taches=j.taches||[];
-      hist=j.hist||[];
-    } else if(j===null){
-      // Première utilisation - sauvegarder les tâches par défaut
+    console.log('Firebase data:', JSON.stringify(j));
+    if(j===null){
+      // Première utilisation uniquement - initialiser avec tâches par défaut
       taches=DEF.slice(); hist=[];
+      console.log('First use, saving defaults');
       await sauver();
+    } else if(j && typeof j === 'object'){
+      // Toujours utiliser les données Firebase, même si taches=[]
+      taches = Array.isArray(j.taches) ? j.taches : [];
+      hist = Array.isArray(j.hist) ? j.hist : [];
+      console.log('Loaded from Firebase:', taches.length, 'taches');
     }
     sync('');
-  }catch(e){ sync('E'); }
+  }catch(e){ 
+    console.log('Firebase error:', e);
+    sync('E'); 
+  }
   recurrence();
   afficher();
 }
@@ -678,7 +685,7 @@ function cocher(id){
     return Object.assign({},t,{fait:false});
   });
   afficher();
-  sauver();
+  sauver().then(function(){ console.log('Saved after check, taches:', JSON.stringify(taches.map(function(t){return {id:t.id,fait:t.fait};}))); });
 }
 
 function demanderSupp(id,titre){
@@ -687,7 +694,13 @@ function demanderSupp(id,titre){
   document.getElementById('confirmOv').style.display='flex';
 }
 function fermerConfirm(){ document.getElementById('confirmOv').style.display='none'; suppId=null; }
-function confirmerSupp(){ if(!suppId) return; taches=taches.filter(function(t){return t.id!==suppId;}); fermerConfirm(); afficher(); sauver(); }
+function confirmerSupp(){ 
+  if(!suppId) return; 
+  taches=taches.filter(function(t){return t.id!==suppId;}); 
+  fermerConfirm(); 
+  afficher(); 
+  sauver().then(function(){ console.log('Saved after delete, taches:', taches.length); }); 
+}
 
 function setUF(v){
   filtreWho=v;
