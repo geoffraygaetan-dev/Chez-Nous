@@ -175,6 +175,9 @@ function migrateTask(t){
   if(qui==='les2') qui = 'gaetan';
   var debut = t.debut || qui;
   if(debut==='les2') debut = 'gaetan';
+  // Si la tâche venait d'être cochée dans l'ancien modèle, on conserve cet état
+  // dans la période courante (sinon rolloverTasks remettrait doneCount à 0).
+  var pk = periodKey(per);
   return {
     id: t.id || ('t_' + Date.now() + '_' + Math.random().toString(36).slice(2,7)),
     titre: t.titre || 'Tâche',
@@ -183,7 +186,7 @@ function migrateTask(t){
     mode: t.mode || 'fix',
     qui: qui,
     debut: debut,
-    periodKey: '',          // sera fixé par rollover
+    periodKey: pk,
     doneCount: t.fait ? 1 : 0,
     lastDoneAt: t.fait ? new Date().toISOString() : null,
     createdAt: t.createdAt || new Date().toISOString()
@@ -292,7 +295,7 @@ async function sauver(){
 // Polling périodique : ne récupère que si pas de modif locale récente
 async function poll(){
   if(saving) return;
-  if(Date.now() - localDirty < 8000) return; // 8 s de garde
+  if(Date.now() - localDirty < 15000) return; // 15 s de garde anti-écrasement
   try{
     var r = await fetch(FIREBASE_URL + '/data.json');
     var j = await r.json();
@@ -905,12 +908,17 @@ function showNotif(title, body){
 }
 
 function activerNotif(){
-  if(typeof Notification === 'undefined') return;
+  if(typeof Notification === 'undefined'){
+    toast('Notifications non supportées sur ce navigateur');
+    return;
+  }
   Notification.requestPermission().then(function(p){
+    document.getElementById('notif').classList.add('is-hidden');
     if(p === 'granted'){
-      document.getElementById('notif').classList.add('is-hidden');
       scheduleNotifications();
       toast('Rappels activés ✓');
+    } else {
+      toast('Rappels désactivés (vous pouvez les réactiver dans ⚙️ Réglages)');
     }
   });
 }
@@ -1063,6 +1071,8 @@ if('serviceWorker' in navigator){
 }
 
 // ----- Notifications banner -----------------------------------------------
+// On n'affiche la bannière que si le navigateur supporte ET que l'utilisateur
+// n'a pas encore choisi (state 'default'). Sur 'denied' ou 'granted' on cache.
 if(typeof Notification !== 'undefined' && Notification.permission === 'default'){
   document.getElementById('notif').classList.remove('is-hidden');
 }

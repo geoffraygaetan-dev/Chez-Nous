@@ -34,7 +34,7 @@
 
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{font-family:var(--font);font-feature-settings:"ss01","cv11"}
-body{background:#0F0D0B;color:var(--ink);min-height:100vh;padding-bottom:100px;font-size:15px;line-height:1.45}
+body{background:var(--warm);color:var(--ink);min-height:100vh;padding-bottom:100px;font-size:15px;line-height:1.45}
 .app{max-width:540px;margin:0 auto;padding:0 16px;padding-top:env(safe-area-inset-top)}
 
 button,input{font-family:inherit}
@@ -123,7 +123,7 @@ button,input{font-family:inherit}
 .ufb.on-a{background:var(--elle);color:white;border-color:var(--elle)}
 .cats{overflow-x:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch}
 .cats::-webkit-scrollbar{display:none}
-.cat-row{display:flex;gap:6px;width:max-content;padding-right:4px}
+.cat-row{display:flex;gap:6px;width:max-content;padding:2px 6px 4px 0}
 .cp{display:flex;align-items:center;gap:6px;padding:8px 13px;border-radius:30px;cursor:pointer;font-size:12px;font-weight:600;background:white;color:var(--mid);white-space:nowrap;box-shadow:var(--shadow-sm);transition:all .2s;border:1.5px solid transparent}
 .cp.on{background:var(--dark);color:white;border-color:var(--dark)}
 .cpn{min-width:18px;height:18px;border-radius:9px;padding:0 5px;background:var(--warm);color:var(--mid);font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
@@ -139,9 +139,9 @@ button,input{font-family:inherit}
 .sbadge-ok{background:rgba(74,140,92,.12);color:var(--ok)}
 
 /* ---------- Task cards ---------- */
-.tc-card{background:white;border-radius:var(--r);margin-bottom:8px;box-shadow:var(--shadow);overflow:hidden;border:1.5px solid transparent;position:relative;transition:transform .15s,box-shadow .2s,opacity .25s}
-.tc-card.is-fading{opacity:0;transform:scale(.96)}
-.tc-card.full{opacity:.6}
+.tc-card{background:white;border-radius:var(--r);margin-bottom:8px;box-shadow:var(--shadow);overflow:hidden;border:1.5px solid transparent;position:relative;transition:transform .15s,box-shadow .2s,opacity .25s;cursor:pointer}
+.tc-card:active{transform:scale(.99)}
+.tc-card.full{opacity:.78}
 .tc-card.late{border-color:rgba(184,64,64,.3)}
 .tc-card.warn{border-color:rgba(196,154,45,.3)}
 .tc-strip{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:0 4px 4px 0}
@@ -156,9 +156,8 @@ button,input{font-family:inherit}
 .tc-card.g .ring-fill{stroke:var(--moi)}
 .tc-card.a .ring-fill{stroke:var(--elle)}
 .ring-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--ink);letter-spacing:-.02em}
-.tc-card.full .ring-num::before{content:'✓';color:var(--ok)}
-.tc-card.full .ring-num{color:transparent;font-size:0}
-.tc-card.full .ring-num::before{font-size:18px}
+.tc-card.full .ring-num{font-size:0}
+.tc-card.full .ring-num::before{content:'✓';font-size:20px;color:var(--ok);font-weight:800}
 
 .tc-body{flex:1;min-width:0}
 .tc-title{font-size:15px;font-weight:600;color:var(--dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;letter-spacing:-.01em}
@@ -223,7 +222,7 @@ button,input{font-family:inherit}
 .dhandle{width:38px;height:4px;border-radius:4px;background:#D8CFC4;margin:0 auto 16px}
 .dtitle{font-size:22px;font-weight:800;color:var(--dark);margin-bottom:18px;letter-spacing:-.01em}
 .flabel{font-size:11px;font-weight:800;color:var(--mid);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;display:block;margin-top:16px}
-.finput{width:100%;background:white;border:1.5px solid #E8E0D4;border-radius:12px;padding:12px 14px;color:var(--dark);font-size:15px;outline:none;-webkit-appearance:none;font-family:inherit;font-weight:500}
+.finput{width:100%;background:white;border:1.5px solid #E8E0D4;border-radius:12px;padding:12px 14px;color:var(--dark);font-size:15px;outline:none;-webkit-appearance:none;appearance:none;font-family:inherit;font-weight:500}
 .finput:focus{border-color:var(--moi)}
 .tgrp{display:flex;gap:6px;flex-wrap:wrap}
 .tbtn{flex:1;min-width:100px;padding:11px 6px;border-radius:12px;border:1.5px solid #E8E0D4;background:white;color:var(--mid);cursor:pointer;font-size:12px;font-weight:600;text-align:center;transition:all .2s}
