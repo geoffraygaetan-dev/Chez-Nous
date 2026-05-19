@@ -89,15 +89,20 @@ function nJoursLabel(n){
   return 'Tous les ' + n + ' jours';
 }
 
+// Libellés lisibles pour les cartes (pas d'abréviations cryptiques)
 function nJoursLabelShort(n){
-  if(n===1) return 'chaque jour';
-  if(n===7) return 'chaque sem.';
-  if(n===14) return 'chaque 2 sem.';
-  if(n===15) return 'chaque 15 j';
-  if(n===21) return 'chaque 3 sem.';
-  if(n===30) return 'chaque mois';
-  if(n===60) return 'chaque 2 mois';
-  return 'tous les ' + n + ' j';
+  if(n === 1)  return 'tous les jours';
+  if(n === 2)  return 'tous les 2 jours';
+  if(n === 3)  return 'tous les 3 jours';
+  if(n === 7)  return 'toutes les semaines';
+  if(n === 10) return 'tous les 10 jours';
+  if(n === 14) return 'toutes les 2 semaines';
+  if(n === 15) return 'tous les 15 jours';
+  if(n === 21) return 'toutes les 3 semaines';
+  if(n === 30) return 'tous les mois';
+  if(n === 60) return 'tous les 2 mois';
+  if(n === 90) return 'tous les 3 mois';
+  return 'tous les ' + n + ' jours';
 }
 
 // Libellé d'échéance pour la chip
@@ -403,7 +408,7 @@ function catPills(){
   document.getElementById('catRow').innerHTML = html;
 }
 
-// ----- Carte tâche ---------------------------------------------------------
+// ----- Carte tâche (layout compact, 1 ligne titre + 1 ligne méta) ---------
 function carteHtml(t){
   var qcls = t.qui === 'gaetan' ? 'g' : 'a';
   var d = daysUntilDue(t);
@@ -415,48 +420,42 @@ function carteHtml(t){
   else if(today) classes += ' today';
   else classes += ' upcoming';
 
-  var info = CATS[t.cat] || {n:'Ménage',e:'🧹'};
-  var R = 18, C = 2*Math.PI*R;
   var color = qcls === 'g' ? '#9E6B45' : '#8FB05A';
-  // Anneau plein si due ou en retard, vide sinon
-  var fillRatio = (late || today) ? 1 : 0;
-  var off = C * (1 - fillRatio);
+  var R = 21, C = (2*Math.PI*R).toFixed(2);
 
-  var chipDeadline;
-  if(late){
-    chipDeadline = '<span class="chip chip-late">⚠ ' + dueLabel(t) + '</span>';
-  } else if(today){
-    chipDeadline = '<span class="chip chip-today">⏰ ' + dueLabel(t) + '</span>';
-  } else {
-    chipDeadline = '<span class="chip chip-soon">📅 ' + dueLabel(t) + '</span>';
-  }
+  // Anneau visible si due/retard (action attendue), vide si à venir (juste un fond)
+  var ringOffset = (late || today) ? '0' : C;
+
+  // Icône dans l'anneau : ! pour retard, rien pour aujourd'hui/à venir
+  var ringIcon = late ? '!' : '';
+
+  var dueText = dueLabel(t);
+  var dueCls = late ? 'late' : today ? 'today' : 'soon';
 
   var dot = late ? '<span class="late-dot" aria-hidden="true"></span>' : '';
 
   return '<article class="'+classes+'" data-id="'+t.id+'">'
     + '<div class="tc-strip"></div>'
     + dot
-    + '<div class="tc-inner">'
-    +   '<button type="button" class="tc-check" data-action="check-task" data-id="'+t.id+'" aria-label="Valider la tâche">'
-    +     '<svg class="ring" width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">'
-    +       '<circle class="ring-bg" cx="28" cy="28" r="22" fill="none" stroke-width="4"/>'
-    +       '<circle class="ring-fill" cx="28" cy="28" r="22" fill="none" stroke="'+color+'" stroke-width="4" stroke-linecap="round" stroke-dasharray="'+(2*Math.PI*22).toFixed(2)+'" stroke-dashoffset="'+(2*Math.PI*22*(1-fillRatio)).toFixed(2)+'" transform="rotate(-90 28 28)"/>'
-    +     '</svg>'
-    +     '<span class="ring-icon">' + (late ? '!' : today ? '✓' : '·') + '</span>'
-    +   '</button>'
-    +   '<div class="tc-body">'
-    +     '<div class="tc-title">'+escapeHtml(t.titre)+'</div>'
-    +     '<div class="chips">'
-    +       '<span class="chip chip-'+qcls+'">'+(qcls==='g'?'🤎':'💚')+' '+courtU(t.qui)+'</span>'
-    +       '<span class="chip chip-cat">'+info.e+' '+info.n+'</span>'
-    +       '<span class="chip chip-freq">🔁 '+nJoursLabelShort(t.tousLesNJours)+'</span>'
-    +       chipDeadline
-    +     '</div>'
-    +   '</div>'
-    +   '<div class="tc-actions">'
-    +     '<button type="button" class="menu-btn" data-action="open-menu" data-id="'+t.id+'" aria-label="Menu">⋯</button>'
+    + '<button type="button" class="tc-check" data-action="check-task" data-id="'+t.id+'" aria-label="Valider : '+escapeHtml(t.titre)+'">'
+    +   '<svg class="ring" width="48" height="48" viewBox="0 0 48 48" aria-hidden="true">'
+    +     '<circle class="ring-bg" cx="24" cy="24" r="'+R+'" fill="none" stroke-width="3"/>'
+    +     '<circle class="ring-fill" cx="24" cy="24" r="'+R+'" fill="none" stroke="'+color+'" stroke-width="3" stroke-linecap="round" stroke-dasharray="'+C+'" stroke-dashoffset="'+ringOffset+'" transform="rotate(-90 24 24)"/>'
+    +   '</svg>'
+    +   '<span class="ring-icon">'+ringIcon+'</span>'
+    +   '<span class="ring-tick" aria-hidden="true">✓</span>'
+    + '</button>'
+    + '<div class="tc-body">'
+    +   '<div class="tc-title">'+escapeHtml(t.titre)+'</div>'
+    +   '<div class="tc-meta">'
+    +     '<span class="meta-who '+qcls+'">'+(qcls==='g'?'🤎':'💚')+' '+courtU(t.qui)+'</span>'
+    +     '<span class="meta-sep">·</span>'
+    +     '<span class="meta-due '+dueCls+'">'+dueText+'</span>'
+    +     '<span class="meta-sep">·</span>'
+    +     '<span class="meta-freq">'+nJoursLabelShort(t.tousLesNJours)+'</span>'
     +   '</div>'
     + '</div>'
+    + '<button type="button" class="menu-btn" data-action="open-menu" data-id="'+t.id+'" aria-label="Menu">⋯</button>'
   + '</article>';
 }
 
@@ -553,6 +552,31 @@ function findTask(id){ for(var i=0;i<taches.length;i++) if(taches[i].id===id) re
 function checkTask(id){
   var t = findTask(id);
   if(!t) return;
+  // Évite double-tap
+  var card = document.querySelector('.tc-card[data-id="'+id+'"]');
+  if(card && card.classList.contains('checking')) return;
+  if(card){
+    card.classList.add('checking');
+    confetti(t.qui);
+    // Calculer le texte de la prochaine échéance dès maintenant
+    var nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + (t.tousLesNJours || 1));
+    var jours = ['dim.','lun.','mar.','mer.','jeu.','ven.','sam.'];
+    var mois = ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+    var nextLabel = (t.tousLesNJours === 1)
+      ? 'demain'
+      : jours[nextDate.getDay()] + ' ' + nextDate.getDate() + ' ' + mois[nextDate.getMonth()];
+    var nextWho = t.mode === 'rot' ? autre(t.qui) : t.qui;
+    toast('✓ ' + t.titre + ' — prochaine fois ' + nextLabel + ' (' + courtU(nextWho) + ')');
+    setTimeout(function(){ _commitCheck(id); }, 480);
+  } else {
+    _commitCheck(id);
+  }
+}
+
+function _commitCheck(id){
+  var t = findTask(id);
+  if(!t) return;
   var quiAvant = t.qui;
   t.lastDoneAt = new Date().toISOString();
   hist.unshift({
@@ -562,11 +586,8 @@ function checkTask(id){
     taskId: t.id
   });
   if(hist.length > 500) hist = hist.slice(0, 500);
-  // Rotation : la prochaine fois c'est l'autre
   if(t.mode === 'rot') t.qui = autre(quiAvant);
   localDirty = Date.now();
-  confetti(quiAvant);
-  toast(t.titre + ' — fait !');
   afficher();
   sauver();
 }
@@ -881,14 +902,44 @@ function activerNotif(){
 // ----- Settings UI --------------------------------------------------------
 function openSettings(){
   var s = getSettings();
+  // Profil
+  var pn = document.getElementById('profileName');
+  var pa = document.getElementById('profileAvatar');
+  if(pn) pn.textContent = courtU(moi || 'gaetan');
+  if(pa){
+    pa.className = 'profile-avatar ' + (moi==='gaetan' ? 'g' : 'a');
+    pa.textContent = moi === 'gaetan' ? '🤎' : '💚';
+  }
+  // Toggles & heures
   document.getElementById('setMorning').checked = s.morning;
   document.getElementById('setMorningTime').value = s.morningTime;
   document.getElementById('setEvening').checked = s.evening;
   document.getElementById('setEveningTime').value = s.eveningTime;
   document.getElementById('setVisual').checked = s.visualAlert;
+  // Stats
+  refreshStats();
+  // À propos
+  var av = document.getElementById('aboutVersion');
+  if(av) av.textContent = '2.0';
+  var au = document.getElementById('aboutUpdated');
+  if(au) au.textContent = new Date().toLocaleString('fr-FR', {dateStyle:'short', timeStyle:'short'});
   document.getElementById('settingsBg').style.display = 'flex';
 }
 function closeSettings(){ document.getElementById('settingsBg').style.display = 'none'; }
+
+function refreshStats(){
+  var n = taches.length;
+  var late = taches.filter(isLate).length;
+  var today = taches.filter(isToday).length;
+  // Faites dans les 30 derniers jours
+  var cut = Date.now() - 30*86400000;
+  var done30 = hist.filter(function(h){ return new Date(h.at).getTime() >= cut; }).length;
+  var statT = document.getElementById('statTotal');     if(statT) statT.textContent = n;
+  var statL = document.getElementById('statLate');      if(statL) statL.textContent = late;
+  var statTo= document.getElementById('statToday');     if(statTo) statTo.textContent = today;
+  var statD = document.getElementById('statDone30');    if(statD) statD.textContent = done30;
+}
+
 function persistSettings(){
   var s = {
     morning: document.getElementById('setMorning').checked,
@@ -898,7 +949,6 @@ function persistSettings(){
     visualAlert: document.getElementById('setVisual').checked
   };
   saveSettings(s);
-  // Appliquer indicateur visuel
   document.body.classList.toggle('no-late-dot', !s.visualAlert);
   if(typeof Notification !== 'undefined' && Notification.permission !== 'granted' && (s.morning || s.evening)){
     Notification.requestPermission().then(function(p){
@@ -908,7 +958,43 @@ function persistSettings(){
     scheduleNotifications();
   }
   closeSettings();
-  toast('Réglages enregistrés');
+  toast('Réglages enregistrés ✓');
+}
+
+function exportData(){
+  var data = {
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    profile: moi,
+    taches: taches,
+    hist: hist
+  };
+  var blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'chez-nous-' + dateLocal() + '.json';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+  toast('Données exportées');
+}
+
+function askReset(){
+  if(!confirm('Effacer toutes les tâches et l\'historique ?\n\nCette action est irréversible. Une sauvegarde JSON sera téléchargée avant.')) return;
+  exportData();
+  setTimeout(function(){
+    taches = DEF.map(migrateTask);
+    hist = [];
+    localDirty = Date.now();
+    afficher();
+    sauver();
+    closeSettings();
+    toast('Réinitialisé. Sauvegarde téléchargée.');
+  }, 300);
 }
 
 // ============================================================================
@@ -986,6 +1072,9 @@ function bindEvents(){
       case 'open-settings': openSettings(); break;
       case 'close-settings': closeSettings(); break;
       case 'save-settings': persistSettings(); break;
+      case 'export-data': exportData(); break;
+      case 'reset-data': askReset(); break;
+      case 'change-profile-settings': closeSettings(); showWelcome(); break;
     }
   });
 

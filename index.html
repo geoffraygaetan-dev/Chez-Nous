@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
 
@@ -177,41 +177,91 @@
     <div class="dhandle"></div>
     <div class="dtitle">Réglages</div>
 
-    <div class="setting-row">
-      <div>
-        <div class="setting-title">☀️ Rappel du matin</div>
-        <div class="setting-sub">Vous prévenir des tâches en retard ou à faire aujourd'hui.</div>
+    <!-- PROFIL -->
+    <div class="settings-section">
+      <div class="section-label">👤 Profil</div>
+      <div class="setting-row profile-row">
+        <div class="profile-avatar g" id="profileAvatar">🤎</div>
+        <div>
+          <div class="setting-title" id="profileName">Gaetan</div>
+          <div class="setting-sub">Profil utilisé sur cet appareil</div>
+        </div>
+        <button class="btn-link" data-action="change-profile-settings">Changer</button>
       </div>
-      <label class="switch"><input type="checkbox" id="setMorning"><span class="slider"></span></label>
     </div>
 
-    <div class="setting-row">
-      <div class="setting-title">Heure du matin</div>
-      <input class="finput time-input" type="time" id="setMorningTime" value="09:00">
-    </div>
-
-    <div class="setting-row">
-      <div>
-        <div class="setting-title">🌆 Rappel du soir</div>
-        <div class="setting-sub">Une seconde piqûre de rappel s'il reste des tâches.</div>
+    <!-- APERÇU -->
+    <div class="settings-section">
+      <div class="section-label">📊 Aperçu</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-n" id="statTotal">0</div><div class="stat-l">Tâches actives</div></div>
+        <div class="stat-box"><div class="stat-n late" id="statLate">0</div><div class="stat-l">En retard</div></div>
+        <div class="stat-box"><div class="stat-n today" id="statToday">0</div><div class="stat-l">Aujourd'hui</div></div>
+        <div class="stat-box"><div class="stat-n" id="statDone30">0</div><div class="stat-l">Faites · 30 j</div></div>
       </div>
-      <label class="switch"><input type="checkbox" id="setEvening"><span class="slider"></span></label>
     </div>
 
-    <div class="setting-row">
-      <div class="setting-title">Heure du soir</div>
-      <input class="finput time-input" type="time" id="setEveningTime" value="19:00">
-    </div>
+    <!-- NOTIFICATIONS -->
+    <div class="settings-section">
+      <div class="section-label">🔔 Notifications</div>
 
-    <div class="setting-row">
-      <div>
-        <div class="setting-title">🔴 Pastille rouge sur les retards</div>
-        <div class="setting-sub">Indicateur visuel clignotant sur les tâches en retard.</div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-title">☀️ Rappel du matin</div>
+          <div class="setting-sub">Liste des tâches en retard ou à faire aujourd'hui.</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="setMorning"><span class="slider"></span></label>
       </div>
-      <label class="switch"><input type="checkbox" id="setVisual"><span class="slider"></span></label>
+      <div class="setting-row">
+        <div class="setting-title">Heure du matin</div>
+        <input class="finput time-input" type="time" id="setMorningTime" value="09:00">
+      </div>
+
+      <div class="setting-row">
+        <div>
+          <div class="setting-title">🌆 Rappel du soir</div>
+          <div class="setting-sub">Deuxième rappel s'il reste des tâches non faites.</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="setEvening"><span class="slider"></span></label>
+      </div>
+      <div class="setting-row">
+        <div class="setting-title">Heure du soir</div>
+        <input class="finput time-input" type="time" id="setEveningTime" value="19:00">
+      </div>
+
+      <div class="setting-info">ℹ️ Sur iOS, les rappels en arrière-plan ne fonctionnent qu'en PWA installée (à partir d'iOS 16.4). Sur Android et ordinateur, ils marchent même app fermée tant que le navigateur tourne.</div>
     </div>
 
-    <div class="setting-info">ℹ️ Sur iOS, les rappels en arrière-plan ne fonctionnent qu'en PWA installée (à partir d'iOS 16.4). Sur Android et ordinateur, ils marchent même app fermée tant que le navigateur tourne.</div>
+    <!-- AFFICHAGE -->
+    <div class="settings-section">
+      <div class="section-label">🎨 Affichage</div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-title">🔴 Pastille rouge sur les retards</div>
+          <div class="setting-sub">Indicateur visuel clignotant pour repérer immédiatement les tâches en retard.</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="setVisual"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <!-- DONNÉES -->
+    <div class="settings-section">
+      <div class="section-label">💾 Données</div>
+      <div class="action-btns">
+        <button class="btn-action" data-action="export-data">📥 <span>Exporter mes données (.json)</span></button>
+        <button class="btn-action danger" data-action="reset-data">⚠️ <span>Tout réinitialiser…</span></button>
+      </div>
+    </div>
+
+    <!-- À PROPOS -->
+    <div class="settings-section">
+      <div class="section-label">ℹ️ À propos</div>
+      <div class="about-grid">
+        <div class="about-row"><span>Version</span><span id="aboutVersion">2.0</span></div>
+        <div class="about-row"><span>Stockage</span><span>Firebase</span></div>
+        <div class="about-row"><span>Ouvert</span><span id="aboutUpdated">—</span></div>
+      </div>
+    </div>
 
     <div class="div"></div>
     <div class="fbtns">
@@ -223,7 +273,7 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="config.js?v=5" defer></script>
-<script src="app.js?v=5" defer></script>
+<script src="config.js?v=6" defer></script>
+<script src="app.js?v=6" defer></script>
 </body>
 </html>
