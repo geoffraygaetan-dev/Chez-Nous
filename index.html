@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
 
@@ -83,7 +83,7 @@
       </div>
     </div>
     <div class="banner-blocks">
-      <div class="banner-block"><div class="banner-block-n" id="banFaites">0</div><div class="banner-block-l">Faites</div></div>
+      <div class="banner-block"><div class="banner-block-n" id="banFaites">0</div><div class="banner-block-l" id="banLblFaites">En retard</div></div>
       <div class="banner-block"><div class="banner-block-n g" id="banG">0</div><div class="banner-block-l">🤎 Gaetan</div></div>
       <div class="banner-block"><div class="banner-block-n a" id="banA">0</div><div class="banner-block-l">💚 Amandine</div></div>
     </div>
@@ -104,14 +104,7 @@
     </div>
     <div class="cats"><div class="cat-row" id="catRow"></div></div>
 
-    <div id="secActive">
-      <div class="shd"><span id="hdActive">À faire</span><span class="sbadge sbadge-todo" id="cntActive">0</span></div>
-      <div id="listActive"></div>
-    </div>
-    <div id="secDone" class="is-hidden">
-      <div class="shd"><span id="hdDone">Terminées cette période</span><span class="sbadge sbadge-ok" id="cntDone">0</span></div>
-      <div id="listDone"></div>
-    </div>
+    <div id="listMain"></div>
   </div>
 
   <div id="panH" class="is-hidden"><div id="listHist"></div></div>
@@ -153,11 +146,11 @@
 
     <label class="flabel">Récurrence</label>
     <div class="fqrow" id="fqrow"></div>
-    <div class="fqcrow" id="fqcrow">
-      <span class="fqclabel">Combien de fois :</span>
-      <div id="fqcbtns" class="fqcbtns"></div>
+    <div id="customWrap" class="is-hidden customwrap">
+      <label class="flabel">Tous les combien de jours ?</label>
+      <input class="finput" type="number" id="fCustomN" min="1" max="365" value="5">
     </div>
-    <div class="fqsum" id="fqsum">1× par semaine</div>
+    <div class="fqsum" id="fqsum">Chaque semaine</div>
 
     <label class="flabel" id="modeLabel">Mode d'assignation</label>
     <div class="tgrp" id="modeGrp">
@@ -186,26 +179,39 @@
 
     <div class="setting-row">
       <div>
-        <div class="setting-title">Rappels du matin</div>
-        <div class="setting-sub">Une notification matinale listant ce qu'il reste à faire pour la période en cours.</div>
+        <div class="setting-title">☀️ Rappel du matin</div>
+        <div class="setting-sub">Vous prévenir des tâches en retard ou à faire aujourd'hui.</div>
       </div>
       <label class="switch"><input type="checkbox" id="setMorning"><span class="slider"></span></label>
     </div>
 
     <div class="setting-row">
-      <div class="setting-title">Heure du rappel matin</div>
+      <div class="setting-title">Heure du matin</div>
       <input class="finput time-input" type="time" id="setMorningTime" value="09:00">
     </div>
 
     <div class="setting-row">
       <div>
-        <div class="setting-title">Rappel de fin de période</div>
-        <div class="setting-sub">Vous prévenir le dernier jour à 18h s'il reste des tâches.</div>
+        <div class="setting-title">🌆 Rappel du soir</div>
+        <div class="setting-sub">Une seconde piqûre de rappel s'il reste des tâches.</div>
       </div>
-      <label class="switch"><input type="checkbox" id="setDeadline"><span class="slider"></span></label>
+      <label class="switch"><input type="checkbox" id="setEvening"><span class="slider"></span></label>
     </div>
 
-    <div class="setting-info">ℹ️ Sur iOS, les rappels en arrière-plan sont limités par le système. Sur Android et ordinateur, ils fonctionnent même app fermée tant que le navigateur tourne.</div>
+    <div class="setting-row">
+      <div class="setting-title">Heure du soir</div>
+      <input class="finput time-input" type="time" id="setEveningTime" value="19:00">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-title">🔴 Pastille rouge sur les retards</div>
+        <div class="setting-sub">Indicateur visuel clignotant sur les tâches en retard.</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="setVisual"><span class="slider"></span></label>
+    </div>
+
+    <div class="setting-info">ℹ️ Sur iOS, les rappels en arrière-plan ne fonctionnent qu'en PWA installée (à partir d'iOS 16.4). Sur Android et ordinateur, ils marchent même app fermée tant que le navigateur tourne.</div>
 
     <div class="div"></div>
     <div class="fbtns">
@@ -217,7 +223,7 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="config.js?v=4" defer></script>
-<script src="app.js?v=4" defer></script>
+<script src="config.js?v=5" defer></script>
+<script src="app.js?v=5" defer></script>
 </body>
 </html>

@@ -1,8 +1,7 @@
 // ============================================================================
 // Chez Nous — application de tâches partagées
-// Modèle "créneaux par période" : chaque tâche a une fréquence (X fois par
-// jour/semaine/quinzaine/3 semaines/mois) et un compteur qui se réinitialise
-// automatiquement à chaque nouvelle période.
+// Modèle "tous les N jours" : chaque tâche a un intervalle en jours et une
+// date de dernière exécution. La prochaine échéance = lastDoneAt + N jours.
 // ============================================================================
 
 'use strict';
@@ -22,13 +21,26 @@ var CATS = {
   admin:    {n:'Admin',     e:'📋'}
 };
 
+// Presets de récurrence (en jours)
+var PRESETS = [
+  {n:1,  l:'Chaque jour'},
+  {n:2,  l:'Tous les 2 jours'},
+  {n:3,  l:'Tous les 3 jours'},
+  {n:7,  l:'Chaque semaine'},
+  {n:10, l:'Tous les 10 jours'},
+  {n:15, l:'Tous les 15 jours'},
+  {n:21, l:'Tous les 21 jours'},
+  {n:30, l:'Chaque mois'},
+  {n:60, l:'Tous les 2 mois'}
+];
+
 // ----- Tâches par défaut (premier lancement) --------------------------------
 var DEF = [
-  {titre:'Vider le lave-vaisselle', cat:'cuisine', freq:{per:'daily',nb:1},   mode:'rot', debut:'gaetan'},
-  {titre:'Sortir les poubelles',     cat:'menage',  freq:{per:'weekly',nb:1},  mode:'rot', debut:'gaetan'},
-  {titre:'Aspirer le sol',           cat:'menage',  freq:{per:'weekly',nb:3},  mode:'rot', debut:'amandine'},
-  {titre:'Faire les courses',        cat:'courses', freq:{per:'weekly',nb:1},  mode:'rot', debut:'amandine'},
-  {titre:'Faire une lessive',        cat:'linge',   freq:{per:'weekly',nb:2},  mode:'rot', debut:'gaetan'}
+  {titre:'Vider le lave-vaisselle', cat:'cuisine', tousLesNJours:1,  mode:'rot', debut:'gaetan'},
+  {titre:'Sortir les poubelles',     cat:'menage',  tousLesNJours:7,  mode:'rot', debut:'gaetan'},
+  {titre:'Aspirer le sol',           cat:'menage',  tousLesNJours:2,  mode:'rot', debut:'amandine'},
+  {titre:'Faire les courses',        cat:'courses', tousLesNJours:7,  mode:'rot', debut:'amandine'},
+  {titre:'Faire une lessive',        cat:'linge',   tousLesNJours:3,  mode:'rot', debut:'gaetan'}
 ];
 
 // ----- État global ----------------------------------------------------------
@@ -40,155 +52,131 @@ var filtreCat = 'all';
 var pendingDeleteId = null;
 var pendingMenuId = null;
 var editingId = null;
-var localDirty = 0;          // timestamp dernière modif locale
-var saving = false;          // PUT en cours ?
-var draft = null;            // brouillon du drawer
+var localDirty = 0;
+var saving = false;
+var draft = null;
 
 // ============================================================================
-// UTILITAIRES DATE / PÉRIODES (locale, pas UTC)
+// UTILITAIRES DATE
 // ============================================================================
-
 function pad(n){ return n<10 ? '0'+n : ''+n; }
+function startOfDay(d){ d = d || new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function dateLocal(d){ d = d || new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+function todayLocal(){ return dateLocal(); }
 
-function dateLocal(d){
-  d = d || new Date();
-  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+// Date d'échéance : lastDoneAt + N jours, ou aujourd'hui si jamais faite
+function dueDate(t){
+  if(!t.lastDoneAt) return startOfDay();
+  var last = new Date(t.lastDoneAt);
+  var d = new Date(last.getFullYear(), last.getMonth(), last.getDate());
+  d.setDate(d.getDate() + (t.tousLesNJours || 1));
+  return d;
 }
 
-function todayLocal(){ return dateLocal(new Date()); }
-
-// Numéro de semaine ISO (lundi = début)
-function isoWeek(d){
-  var dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  // Jeudi de la semaine en cours détermine l'année
-  dt.setDate(dt.getDate() + 3 - ((dt.getDay()+6) % 7));
-  var week1 = new Date(dt.getFullYear(), 0, 4);
-  var diff = (dt - week1) / 86400000;
-  var w = 1 + Math.round((diff - 3 + ((week1.getDay()+6) % 7)) / 7);
-  return {year: dt.getFullYear(), week: w};
+// Jours jusqu'à l'échéance : >0 = à venir, =0 = aujourd'hui, <0 = en retard
+function daysUntilDue(t){
+  var due = dueDate(t);
+  var today = startOfDay();
+  return Math.round((due - today) / 86400000);
 }
 
-// Indice "absolu" de semaine depuis epoch (pour quinzaine / 3 semaines)
-function weekIndex(d){
-  // Lundi de la semaine de d
-  var dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  var dow = (dt.getDay()+6) % 7; // 0 = lundi
-  dt.setDate(dt.getDate() - dow);
-  // Lundi 5 jan 1970 = epoch + 4 jours
-  var monday0 = new Date(1970,0,5);
-  return Math.floor((dt - monday0) / (7*86400000));
+function isLate(t){    return daysUntilDue(t) <  0; }
+function isToday(t){   return daysUntilDue(t) === 0; }
+function isUpcoming(t){return daysUntilDue(t) >  0; }
+
+function nJoursLabel(n){
+  for(var i=0;i<PRESETS.length;i++) if(PRESETS[i].n === n) return PRESETS[i].l;
+  return 'Tous les ' + n + ' jours';
 }
 
-function periodKey(per, d){
-  d = d || new Date();
-  if(per==='daily')   return 'D-' + dateLocal(d);
-  if(per==='weekly'){ var w = isoWeek(d); return 'W-' + w.year + '-' + pad(w.week); }
-  if(per==='biweekly') return 'B-' + Math.floor(weekIndex(d)/2);
-  if(per==='triweekly') return 'T-' + Math.floor(weekIndex(d)/3);
-  if(per==='monthly') return 'M-' + d.getFullYear() + '-' + pad(d.getMonth()+1);
-  return 'D-' + dateLocal(d);
+function nJoursLabelShort(n){
+  if(n===1) return 'chaque jour';
+  if(n===7) return 'chaque sem.';
+  if(n===14) return 'chaque 2 sem.';
+  if(n===15) return 'chaque 15 j';
+  if(n===21) return 'chaque 3 sem.';
+  if(n===30) return 'chaque mois';
+  if(n===60) return 'chaque 2 mois';
+  return 'tous les ' + n + ' j';
 }
 
-// Date de fin de période courante (Date object, 23:59:59)
-function periodEnd(per, d){
-  d = d || new Date();
-  if(per==='daily'){
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
+// Libellé d'échéance pour la chip
+function dueLabel(t){
+  var d = daysUntilDue(t);
+  if(d < 0){
+    var n = -d;
+    return n === 1 ? '1 jour de retard' : n + ' jours de retard';
   }
-  if(per==='weekly' || per==='biweekly' || per==='triweekly'){
-    // Fin = dimanche de la fin de période
-    var dow = (d.getDay()+6) % 7;
-    var endOffset;
-    if(per==='weekly'){ endOffset = 6 - dow; }
-    else if(per==='biweekly'){
-      var bw = weekIndex(d) % 2;
-      endOffset = (1-bw)*7 + (6 - dow);
-    } else {
-      var tw = weekIndex(d) % 3;
-      endOffset = (2-tw)*7 + (6 - dow);
-    }
-    var end = new Date(d.getFullYear(), d.getMonth(), d.getDate()+endOffset, 23, 59, 59);
-    return end;
-  }
-  if(per==='monthly'){
-    return new Date(d.getFullYear(), d.getMonth()+1, 0, 23, 59, 59);
-  }
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
-}
-
-// Libellé court "Jusqu'à dim." / "Aujourd'hui" etc.
-function periodEndLabel(per){
-  var end = periodEnd(per);
-  var now = new Date();
+  if(d === 0) return "À faire aujourd'hui";
+  if(d === 1) return 'Demain';
+  if(d <= 7) return 'Dans ' + d + ' jours';
+  // Sinon : date courte
+  var due = dueDate(t);
   var jours = ['dim.','lun.','mar.','mer.','jeu.','ven.','sam.'];
-  var diff = Math.ceil((end - now) / 86400000);
-  if(per==='daily') return "aujourd'hui";
-  if(per==='monthly'){
-    var mois = ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
-    return 'jusqu\'au ' + end.getDate() + ' ' + mois[end.getMonth()];
-  }
-  return 'jusqu\'à ' + jours[end.getDay()] + (diff<=1 ? '' : ' (' + diff + 'j)');
-}
-
-// Combien de jours restant dans la période (pour avertir)
-function daysLeft(per){
-  var end = periodEnd(per);
-  return Math.ceil((end - new Date()) / 86400000);
-}
-
-// ----- Fréquence : libellé humain ------------------------------------------
-function freqLabel(f){
-  if(!f) return '';
-  var nb = f.nb || 1;
-  var pl = nb>1 ? ' fois' : ' fois';
-  if(f.per==='daily')      return nb + pl + ' par jour';
-  if(f.per==='weekly')     return nb + pl + ' par semaine';
-  if(f.per==='biweekly')   return nb + pl + ' toutes les 2 semaines';
-  if(f.per==='triweekly')  return nb + pl + ' toutes les 3 semaines';
-  if(f.per==='monthly')    return nb + pl + ' par mois';
-  return '';
-}
-
-function freqLabelShort(f){
-  if(!f) return '';
-  var nb = f.nb || 1;
-  if(f.per==='daily')     return nb+'×/jour';
-  if(f.per==='weekly')    return nb+'×/sem.';
-  if(f.per==='biweekly')  return nb+'×/2sem.';
-  if(f.per==='triweekly') return nb+'×/3sem.';
-  if(f.per==='monthly')   return nb+'×/mois';
-  return '';
+  var mois = ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+  return jours[due.getDay()] + ' ' + due.getDate() + ' ' + mois[due.getMonth()];
 }
 
 // ============================================================================
-// MIGRATION ANCIEN MODÈLE -> NOUVEAU
+// MIGRATION ANCIENS MODÈLES -> NOUVEAU
 // ============================================================================
+function freqToDays(per, nb){
+  nb = nb || 1;
+  // Approximation : N jours entre exécutions = (durée période en jours) / nb
+  if(per === 'daily')      return Math.max(1, Math.round(1 / nb));
+  if(per === 'weekly')     return Math.max(1, Math.round(7 / nb));
+  if(per === 'biweekly')   return Math.max(1, Math.round(14 / nb));
+  if(per === 'triweekly')  return Math.max(1, Math.round(21 / nb));
+  if(per === 'monthly')    return Math.max(1, Math.round(30 / nb));
+  return 7;
+}
+
 function migrateTask(t){
-  if(t.freq && typeof t.freq === 'object' && t.freq.per) return t; // déjà migré
-  // Ancien : freq = "1x_daily", "3x_weekly", "1x_biweekly", "1x_triweekly", "1x_monthly"
-  var per = 'weekly'; var nb = 1;
-  if(typeof t.freq === 'string'){
-    var m = t.freq.match(/^(\d+)x_(.+)$/);
-    if(m){ nb = parseInt(m[1],10) || 1; per = m[2]; }
+  // Si déjà au nouveau format
+  if(typeof t.tousLesNJours === 'number' && t.tousLesNJours > 0){
+    return Object.assign({}, t, {
+      mode: t.mode || 'fix',
+      qui: t.qui || t.debut || 'gaetan',
+      debut: t.debut || t.qui || 'gaetan',
+      lastDoneAt: t.lastDoneAt || null,
+      createdAt: t.createdAt || new Date().toISOString()
+    });
   }
+
+  // Format intermédiaire {freq:{per,nb}}
+  var n = 7;
+  if(t.freq && typeof t.freq === 'object' && t.freq.per){
+    n = freqToDays(t.freq.per, t.freq.nb);
+  }
+  // Ancien format string "3x_weekly"
+  else if(typeof t.freq === 'string'){
+    var m = t.freq.match(/^(\d+)x_(.+)$/);
+    if(m){ n = freqToDays(m[2], parseInt(m[1],10) || 1); }
+  }
+
   var qui = t.qui || t.debut || 'gaetan';
-  if(qui==='les2') qui = 'gaetan';
+  if(qui === 'les2') qui = 'gaetan';
   var debut = t.debut || qui;
-  if(debut==='les2') debut = 'gaetan';
-  // Si la tâche venait d'être cochée dans l'ancien modèle, on conserve cet état
-  // dans la période courante (sinon rolloverTasks remettrait doneCount à 0).
-  var pk = periodKey(per);
+  if(debut === 'les2') debut = 'gaetan';
+
+  // Catégorie : si inconnue, retombe sur menage
+  var cat = t.cat;
+  if(!cat || !CATS[cat]) cat = 'menage';
+
+  // Si la tâche était déjà faite (ancien fait:true), mettre lastDoneAt à maintenant
+  // Sinon, lastDoneAt nul = due aujourd'hui
+  var lastDoneAt = t.lastDoneAt || null;
+  if(t.fait && !lastDoneAt) lastDoneAt = new Date().toISOString();
+
   return {
     id: t.id || ('t_' + Date.now() + '_' + Math.random().toString(36).slice(2,7)),
     titre: t.titre || 'Tâche',
-    cat: t.cat || 'menage',
-    freq: {per:per, nb:nb},
+    cat: cat,
+    tousLesNJours: n,
     mode: t.mode || 'fix',
     qui: qui,
     debut: debut,
-    periodKey: pk,
-    doneCount: t.fait ? 1 : 0,
-    lastDoneAt: t.fait ? new Date().toISOString() : null,
+    lastDoneAt: lastDoneAt,
     createdAt: t.createdAt || new Date().toISOString()
   };
 }
@@ -213,28 +201,7 @@ function migrateAll(j){
   return out;
 }
 
-// ============================================================================
-// ROLLOVER : reset des compteurs en début de période, rotation auto
-// ============================================================================
-function autre(q){ return q==='gaetan' ? 'amandine' : 'gaetan'; }
-
-function rolloverTasks(){
-  taches = taches.map(function(t){
-    var pk = periodKey(t.freq.per);
-    if(t.periodKey !== pk){
-      var newQui = t.mode==='rot' ? (t.qui ? autre(t.qui) : t.debut) : t.qui;
-      // Première initialisation : on garde t.debut
-      if(!t.periodKey) newQui = t.qui || t.debut;
-      return Object.assign({}, t, {
-        periodKey: pk,
-        doneCount: 0,
-        lastDoneAt: null,
-        qui: newQui
-      });
-    }
-    return t;
-  });
-}
+function autre(q){ return q === 'gaetan' ? 'amandine' : 'gaetan'; }
 
 // ============================================================================
 // FIREBASE I/O
@@ -244,7 +211,7 @@ function sync(s){
   var txt = document.getElementById('stxt');
   if(!dot) return;
   dot.className = 'sdot' + (s ? ' '+s : '');
-  txt.textContent = s==='L' ? 'Sync…' : s==='E' ? 'Hors ligne' : 'Sync';
+  txt.textContent = s === 'L' ? 'Sync…' : s === 'E' ? 'Hors ligne' : 'Sync';
 }
 
 async function charger(){
@@ -257,13 +224,11 @@ async function charger(){
     if(j === null){
       taches = DEF.map(migrateTask);
       hist = [];
-      rolloverTasks();
       await sauver();
     } else {
       var m = migrateAll(j);
       taches = m.taches;
       hist = m.hist;
-      rolloverTasks();
     }
     sync('');
   } catch(e){
@@ -292,10 +257,9 @@ async function sauver(){
   }
 }
 
-// Polling périodique : ne récupère que si pas de modif locale récente
 async function poll(){
   if(saving) return;
-  if(Date.now() - localDirty < 15000) return; // 15 s de garde anti-écrasement
+  if(Date.now() - localDirty < 15000) return;
   try{
     var r = await fetch(FIREBASE_URL + '/data.json');
     var j = await r.json();
@@ -306,7 +270,6 @@ async function poll(){
     if(serializedNew !== serialized){
       taches = m.taches;
       hist = m.hist;
-      rolloverTasks();
       afficher();
     }
     sync('');
@@ -317,16 +280,15 @@ async function poll(){
 // AFFICHAGE
 // ============================================================================
 function afficher(){
-  rolloverTasks(); // au cas où on a changé de période depuis le dernier render
   greet();
   banner();
   catPills();
   liste();
   listeHist();
-  document.getElementById('tcH').textContent = hist.length>99 ? '99+' : hist.length;
+  document.getElementById('tcH').textContent = hist.length > 99 ? '99+' : hist.length;
 }
 
-function courtU(u){ return u==='gaetan' ? 'Gaetan' : 'Amandine'; }
+function courtU(u){ return u === 'gaetan' ? 'Gaetan' : 'Amandine'; }
 
 function greet(){
   var now = new Date();
@@ -334,17 +296,21 @@ function greet(){
   var mois = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
   document.getElementById('gdate').textContent = jours[now.getDay()]+' '+now.getDate()+' '+mois[now.getMonth()];
   var h = now.getHours();
-  var sal = h<6?'Bonne nuit':h<12?'Bonjour':h<18?'Bon après-midi':'Bonsoir';
-  // Tâches restant à faire pour moi sur la période en cours
-  var p = taches.filter(function(t){ return t.qui===moi && t.doneCount < t.freq.nb; }).length;
+  var sal = h<6 ? 'Bonne nuit' : h<12 ? 'Bonjour' : h<18 ? 'Bon après-midi' : 'Bonsoir';
+  var mesTaches = taches.filter(function(t){ return t.qui === moi; });
+  var lateMine = mesTaches.filter(isLate).length;
+  var todayMine = mesTaches.filter(isToday).length;
+  var aFaire = lateMine + todayMine;
   var nom = moi ? courtU(moi) : '';
   var el = document.getElementById('gtxt');
   if(!moi){
     el.textContent = 'Bienvenue chez nous';
-  } else if(p===0){
-    el.innerHTML = '<em>Bravo '+nom+' !</em> Tout est à jour';
+  } else if(aFaire === 0){
+    el.innerHTML = '<em>Bravo '+nom+' !</em> Rien d\'urgent';
+  } else if(lateMine > 0){
+    el.innerHTML = sal + ' <em>' + nom + '</em> — ' + lateMine + ' en retard, ' + todayMine + ' aujourd\'hui';
   } else {
-    el.innerHTML = sal+' <em>'+nom+'</em> — '+p+' tâche'+(p>1?'s':'')+' pour vous';
+    el.innerHTML = sal + ' <em>' + nom + '</em> — ' + todayMine + ' à faire aujourd\'hui';
   }
 }
 
@@ -358,7 +324,7 @@ function banner(){
   var core = document.getElementById('astroCore');
   var shadow = document.getElementById('astroShadow');
   var ring = document.getElementById('astroRing');
-  for(var ri=0;ri<8;ri++){ var el=document.getElementById('r'+ri); if(el) el.style.transform='rotate('+ri*45+'deg) translateX(-50%)'; }
+  for(var ri=0;ri<8;ri++){ var elr = document.getElementById('r'+ri); if(elr) elr.style.transform='rotate('+ri*45+'deg) translateX(-50%)'; }
 
   var dateBase = jours[now.getDay()]+' '+now.getDate()+' '+mois[now.getMonth()];
   var prefix = '';
@@ -399,32 +365,29 @@ function banner(){
   }
   document.getElementById('banDate').textContent = prefix + dateBase;
 
-  // Calculs : créneaux totaux, faits, restants par personne
-  var totalSlots = 0, doneSlots = 0, restG = 0, restA = 0, lateCount = 0;
-  taches.forEach(function(t){
-    var nb = t.freq.nb, dc = t.doneCount;
-    totalSlots += nb;
-    doneSlots += Math.min(dc, nb);
-    var rest = Math.max(0, nb - dc);
-    if(t.qui==='gaetan') restG += rest; else restA += rest;
-    if(rest>0 && daysLeft(t.freq.per) <= 1) lateCount += rest;
-  });
-  var pct = totalSlots>0 ? Math.round(doneSlots/totalSlots*100) : 0;
+  var lateAll  = taches.filter(isLate).length;
+  var todayAll = taches.filter(isToday).length;
+  var lateG  = taches.filter(function(t){ return t.qui==='gaetan' && (isLate(t) || isToday(t)); }).length;
+  var lateA  = taches.filter(function(t){ return t.qui==='amandine' && (isLate(t) || isToday(t)); }).length;
+  var totalActives = lateAll + todayAll;
 
   var titre;
-  if(totalSlots===0){ titre = 'Pas encore de <em>tâches</em>'; }
-  else if(pct===100){ titre = 'Tout est fait ! 🎉'; }
-  else if(pct>=75){ titre = 'Presque <em>terminé</em>'; }
-  else if(lateCount>0){ titre = lateCount+' tâche'+(lateCount>1?'s':'')+' urgentes'; }
-  else if(pct>=50){ titre = 'Bonne <em>progression</em>'; }
-  else if(pct>0){ titre = 'En cours…'; }
-  else { titre = 'Nouvelle <em>période</em>'; }
+  if(taches.length === 0){ titre = 'Pas encore de <em>tâches</em>'; }
+  else if(totalActives === 0){ titre = 'Tout est <em>à jour</em> ! 🎉'; }
+  else if(lateAll > 0){ titre = '⚠ ' + lateAll + ' tâche' + (lateAll>1?'s':'') + ' en <em>retard</em>'; }
+  else if(todayAll > 0){ titre = todayAll + ' tâche' + (todayAll>1?'s':'') + ' à faire <em>aujourd\'hui</em>'; }
+  else { titre = 'Bonne <em>journée</em>'; }
 
   document.getElementById('banTitre').innerHTML = titre;
+  // Barre de progression : ratio à jour / total
+  var pct = taches.length > 0 ? Math.round(((taches.length - totalActives) / taches.length) * 100) : 100;
   document.getElementById('banFill').style.width = pct + '%';
-  document.getElementById('banFaites').textContent = doneSlots;
-  document.getElementById('banG').textContent = restG;
-  document.getElementById('banA').textContent = restA;
+  document.getElementById('banFaites').textContent = lateAll;
+  document.getElementById('banG').textContent = lateG;
+  document.getElementById('banA').textContent = lateA;
+  // Mettre à jour les libellés du banner
+  var lblFaites = document.getElementById('banLblFaites');
+  if(lblFaites) lblFaites.textContent = 'EN RETARD';
 }
 
 function catPills(){
@@ -432,76 +395,69 @@ function catPills(){
   var cnt = {};
   vis.forEach(function(t){ cnt[t.cat] = (cnt[t.cat]||0)+1; });
   var used = Object.keys(CATS).filter(function(c){ return cnt[c]; });
-  var html = '<div class="cp on-all cp'+(filtreCat==='all'?' on':'')+'" data-action="set-category" data-value="all">✦ Tout<span class="cpn">'+vis.length+'</span></div>';
+  var html = '<button type="button" class="cp on-all'+(filtreCat==='all'?' on':'')+'" data-action="set-category" data-value="all">✦ Tout<span class="cpn">'+vis.length+'</span></button>';
   used.forEach(function(c){
     var info = CATS[c];
-    html += '<div class="cp'+(filtreCat===c?' on':'')+'" data-action="set-category" data-value="'+c+'">'+info.e+' '+info.n+'<span class="cpn">'+(cnt[c]||0)+'</span></div>';
+    html += '<button type="button" class="cp'+(filtreCat===c?' on':'')+'" data-action="set-category" data-value="'+c+'">'+info.e+' '+info.n+'<span class="cpn">'+(cnt[c]||0)+'</span></button>';
   });
   document.getElementById('catRow').innerHTML = html;
 }
 
 // ----- Carte tâche ---------------------------------------------------------
-function progressRing(done, total, klass){
-  var pct = total>0 ? Math.min(1, done/total) : 0;
-  var R = 18, C = 2*Math.PI*R;
-  var off = C * (1-pct);
-  var color = klass==='g' ? '#9E6B45' : '#8FB05A';
-  return ''
-    + '<svg class="ring" width="46" height="46" viewBox="0 0 46 46">'
-    +   '<circle class="ring-bg" cx="23" cy="23" r="'+R+'" fill="none" stroke-width="4"/>'
-    +   '<circle class="ring-fill" cx="23" cy="23" r="'+R+'" fill="none" stroke="'+color+'" stroke-width="4" stroke-linecap="round" stroke-dasharray="'+C.toFixed(2)+'" stroke-dashoffset="'+off.toFixed(2)+'"/>'
-    + '</svg>';
-}
-
 function carteHtml(t){
-  var qcls = t.qui==='gaetan' ? 'g' : 'a';
-  var full = t.doneCount >= t.freq.nb;
-  var dleft = daysLeft(t.freq.per);
-  var rest = Math.max(0, t.freq.nb - t.doneCount);
-  var warn = !full && rest>0 && dleft<=1;
-  var late = !full && rest>0 && dleft<0;
+  var qcls = t.qui === 'gaetan' ? 'g' : 'a';
+  var d = daysUntilDue(t);
+  var late = d < 0;
+  var today = d === 0;
 
-  var classes = 'tc-card '+qcls;
-  if(full) classes += ' full';
-  else if(late) classes += ' late';
-  else if(warn) classes += ' warn';
+  var classes = 'tc-card ' + qcls;
+  if(late) classes += ' late';
+  else if(today) classes += ' today';
+  else classes += ' upcoming';
 
-  var info = CATS[t.cat] || {n:'',e:'•'};
-  var nbLabel = t.doneCount + '/' + t.freq.nb;
+  var info = CATS[t.cat] || {n:'Ménage',e:'🧹'};
+  var R = 18, C = 2*Math.PI*R;
+  var color = qcls === 'g' ? '#9E6B45' : '#8FB05A';
+  // Anneau plein si due ou en retard, vide sinon
+  var fillRatio = (late || today) ? 1 : 0;
+  var off = C * (1 - fillRatio);
 
-  // Chip d'échéance
   var chipDeadline;
-  if(full){
-    chipDeadline = '<span class="chip chip-ok">✓ Terminé</span>';
-  } else if(late){
-    chipDeadline = '<span class="chip chip-late">⚠ Période finie</span>';
-  } else if(dleft<=1){
-    chipDeadline = '<span class="chip chip-warn">⏰ '+periodEndLabel(t.freq.per)+'</span>';
+  if(late){
+    chipDeadline = '<span class="chip chip-late">⚠ ' + dueLabel(t) + '</span>';
+  } else if(today){
+    chipDeadline = '<span class="chip chip-today">⏰ ' + dueLabel(t) + '</span>';
   } else {
-    chipDeadline = '<span class="chip chip-freq">📅 '+periodEndLabel(t.freq.per)+'</span>';
+    chipDeadline = '<span class="chip chip-soon">📅 ' + dueLabel(t) + '</span>';
   }
 
-  return '<div class="'+classes+'" data-action="check-task" data-id="'+t.id+'">'
+  var dot = late ? '<span class="late-dot" aria-hidden="true"></span>' : '';
+
+  return '<article class="'+classes+'" data-id="'+t.id+'">'
     + '<div class="tc-strip"></div>'
+    + dot
     + '<div class="tc-inner">'
-    +   '<button class="tc-check" data-action="check-task" data-id="'+t.id+'" aria-label="Cocher">'
-    +     progressRing(t.doneCount, t.freq.nb, qcls)
-    +     '<span class="ring-num">'+nbLabel+'</span>'
+    +   '<button type="button" class="tc-check" data-action="check-task" data-id="'+t.id+'" aria-label="Valider la tâche">'
+    +     '<svg class="ring" width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">'
+    +       '<circle class="ring-bg" cx="28" cy="28" r="22" fill="none" stroke-width="4"/>'
+    +       '<circle class="ring-fill" cx="28" cy="28" r="22" fill="none" stroke="'+color+'" stroke-width="4" stroke-linecap="round" stroke-dasharray="'+(2*Math.PI*22).toFixed(2)+'" stroke-dashoffset="'+(2*Math.PI*22*(1-fillRatio)).toFixed(2)+'" transform="rotate(-90 28 28)"/>'
+    +     '</svg>'
+    +     '<span class="ring-icon">' + (late ? '!' : today ? '✓' : '·') + '</span>'
     +   '</button>'
     +   '<div class="tc-body">'
     +     '<div class="tc-title">'+escapeHtml(t.titre)+'</div>'
     +     '<div class="chips">'
     +       '<span class="chip chip-'+qcls+'">'+(qcls==='g'?'🤎':'💚')+' '+courtU(t.qui)+'</span>'
     +       '<span class="chip chip-cat">'+info.e+' '+info.n+'</span>'
-    +       '<span class="chip chip-freq">🔁 '+freqLabelShort(t.freq)+'</span>'
+    +       '<span class="chip chip-freq">🔁 '+nJoursLabelShort(t.tousLesNJours)+'</span>'
     +       chipDeadline
     +     '</div>'
     +   '</div>'
     +   '<div class="tc-actions">'
-    +     '<button class="menu-btn" data-action="open-menu" data-id="'+t.id+'" aria-label="Menu">⋯</button>'
+    +     '<button type="button" class="menu-btn" data-action="open-menu" data-id="'+t.id+'" aria-label="Menu">⋯</button>'
     +   '</div>'
     + '</div>'
-  + '</div>';
+  + '</article>';
 }
 
 function escapeHtml(s){
@@ -516,48 +472,46 @@ function liste(){
     if(filtreCat!=='all' && t.cat!==filtreCat) return false;
     return true;
   });
-  var actives = vis.filter(function(t){ return t.doneCount < t.freq.nb; });
-  var dones   = vis.filter(function(t){ return t.doneCount >= t.freq.nb; });
+  var late     = vis.filter(isLate);
+  var todayArr = vis.filter(isToday);
+  var upcoming = vis.filter(isUpcoming);
 
-  // Tri actives : urgence (jours restants asc) puis titre
-  actives.sort(function(a,b){
-    var da = daysLeft(a.freq.per), db = daysLeft(b.freq.per);
-    if(da !== db) return da - db;
-    return a.titre.localeCompare(b.titre, 'fr');
-  });
-  dones.sort(function(a,b){ return (b.lastDoneAt||'').localeCompare(a.lastDoneAt||''); });
+  late.sort(function(a,b){ return daysUntilDue(a) - daysUntilDue(b); }); // plus en retard d'abord
+  todayArr.sort(function(a,b){ return a.titre.localeCompare(b.titre,'fr'); });
+  upcoming.sort(function(a,b){ return daysUntilDue(a) - daysUntilDue(b); });
 
-  document.getElementById('tcT').textContent = actives.length;
-  document.getElementById('cntActive').textContent = actives.length;
-  document.getElementById('cntDone').textContent = dones.length;
+  document.getElementById('tcT').textContent = late.length + todayArr.length;
+  var tcCnt = document.getElementById('tcT');
+  if(tcCnt) tcCnt.classList.toggle('has-late', late.length > 0);
 
-  var listA = document.getElementById('listActive');
-  if(actives.length===0){
-    var emptyMsg = vis.length===0
-      ? '<div class="empty"><div class="empty-icon">✨</div><div class="empty-title">Rien ici</div><div class="empty-sub">Touchez le bouton + en bas à droite pour ajouter une tâche.</div></div>'
-      : '<div class="empty"><div class="empty-icon">🎉</div><div class="empty-title">Tout est fait !</div><div class="empty-sub">Belle équipe. Profitez de votre temps libre.</div></div>';
-    listA.innerHTML = emptyMsg;
-  } else {
-    listA.innerHTML = actives.map(carteHtml).join('');
+  var html = '';
+  if(late.length){
+    html += '<div class="shd shd-late">🔴 En retard <span class="sbadge sbadge-late">'+late.length+'</span></div>';
+    html += late.map(carteHtml).join('');
+  }
+  if(todayArr.length){
+    html += '<div class="shd">🟡 Aujourd\'hui <span class="sbadge sbadge-today">'+todayArr.length+'</span></div>';
+    html += todayArr.map(carteHtml).join('');
+  }
+  if(upcoming.length){
+    html += '<div class="shd">⚪ À venir <span class="sbadge sbadge-upcoming">'+upcoming.length+'</span></div>';
+    html += upcoming.map(carteHtml).join('');
+  }
+  if(vis.length === 0){
+    html = '<div class="empty"><div class="empty-icon">✨</div><div class="empty-title">Rien ici</div><div class="empty-sub">Touchez le bouton + en bas à droite pour ajouter une tâche.</div></div>';
+  } else if(late.length === 0 && todayArr.length === 0){
+    html = '<div class="empty"><div class="empty-icon">🎉</div><div class="empty-title">Tout est à jour !</div><div class="empty-sub">Belle équipe. Profitez de votre temps libre.</div></div>' + html;
   }
 
-  var sd = document.getElementById('secDone');
-  if(dones.length===0){
-    sd.classList.add('is-hidden');
-  } else {
-    sd.classList.remove('is-hidden');
-    document.getElementById('listDone').innerHTML = dones.map(carteHtml).join('');
-  }
+  document.getElementById('listMain').innerHTML = html;
 }
 
-// ----- Historique ---------------------------------------------------------
 function listeHist(){
   var el = document.getElementById('listHist');
-  if(hist.length===0){
+  if(hist.length === 0){
     el.innerHTML = '<div class="empty"><div class="empty-icon">📜</div><div class="empty-title">Pas d\'historique</div><div class="empty-sub">Vos tâches terminées apparaîtront ici.</div></div>';
     return;
   }
-  // Trier par date desc et grouper par jour
   var sorted = hist.slice().sort(function(a,b){ return (b.at||'').localeCompare(a.at||''); }).slice(0, 200);
   var groups = {};
   sorted.forEach(function(h){
@@ -573,10 +527,10 @@ function listeHist(){
   keys.forEach(function(k){
     var dt = new Date(k+'T12:00:00');
     var label = jours[dt.getDay()]+' '+dt.getDate()+' '+mois[dt.getMonth()];
-    if(k===today) label = "Aujourd'hui";
+    if(k === today) label = "Aujourd'hui";
     html += '<div class="h-day"><div class="h-day-hd">'+label+'</div>';
     groups[k].forEach(function(h){
-      var qcls = h.qui==='gaetan' ? 'g' : 'a';
+      var qcls = h.qui === 'gaetan' ? 'g' : 'a';
       var t = new Date(h.at);
       var heure = pad(t.getHours())+':'+pad(t.getMinutes());
       var info = CATS[h.cat] || {n:'',e:'•'};
@@ -599,37 +553,39 @@ function findTask(id){ for(var i=0;i<taches.length;i++) if(taches[i].id===id) re
 function checkTask(id){
   var t = findTask(id);
   if(!t) return;
-  if(t.doneCount >= t.freq.nb){
-    toast("Déjà terminée pour cette période");
-    return;
-  }
-  t.doneCount += 1;
+  var quiAvant = t.qui;
   t.lastDoneAt = new Date().toISOString();
   hist.unshift({
     id: 'h_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-    titre: t.titre, qui: t.qui, cat: t.cat,
+    titre: t.titre, qui: quiAvant, cat: t.cat,
     at: new Date().toISOString(),
     taskId: t.id
   });
   if(hist.length > 500) hist = hist.slice(0, 500);
+  // Rotation : la prochaine fois c'est l'autre
+  if(t.mode === 'rot') t.qui = autre(quiAvant);
   localDirty = Date.now();
-  if(t.doneCount >= t.freq.nb){
-    confetti(t.qui);
-    toast(t.titre + ' — terminé !');
-  }
+  confetti(quiAvant);
+  toast(t.titre + ' — fait !');
   afficher();
   sauver();
 }
 
 function decrementTask(id){
   var t = findTask(id);
-  if(!t || t.doneCount<=0){ toast("Rien à annuler"); return; }
-  t.doneCount -= 1;
-  // Retirer la dernière entrée d'historique correspondant à cette tâche
-  for(var i=0;i<hist.length;i++){
-    if(hist[i].taskId === id){ hist.splice(i,1); break; }
-  }
-  t.lastDoneAt = null;
+  if(!t){ toast("Tâche introuvable"); return; }
+  // Trouver la dernière entrée d'historique pour cette tâche
+  var idx = -1;
+  for(var i=0;i<hist.length;i++){ if(hist[i].taskId===id){ idx = i; break; } }
+  if(idx < 0){ toast("Rien à annuler"); return; }
+  var entry = hist[idx];
+  hist.splice(idx, 1);
+  // Trouver l'entrée précédente (s'il y en a une) pour restaurer lastDoneAt
+  var prevAt = null;
+  for(var j=0;j<hist.length;j++){ if(hist[j].taskId===id){ prevAt = hist[j].at; break; } }
+  t.lastDoneAt = prevAt;
+  // Inverser la rotation : remettre le qui qui avait fait l'action annulée
+  if(t.mode === 'rot') t.qui = entry.qui;
   localDirty = Date.now();
   toast("Annulé");
   afficher();
@@ -643,15 +599,16 @@ function deleteTask(id){
   sauver();
 }
 
-// ----- Drawer (ajout / édition) -------------------------------------------
+// ----- Drawer -------------------------------------------------------------
 function defaultDraft(){
   return {
     id: null,
     titre: '',
     cat: 'menage',
-    freq: {per:'weekly', nb:1},
+    tousLesNJours: 7,
     mode: 'rot',
-    debut: 'gaetan'
+    debut: 'gaetan',
+    customN: 7
   };
 }
 
@@ -664,9 +621,10 @@ function openDrawer(taskId){
       id: t.id,
       titre: t.titre,
       cat: t.cat,
-      freq: {per: t.freq.per, nb: t.freq.nb},
+      tousLesNJours: t.tousLesNJours,
       mode: t.mode,
-      debut: t.debut || t.qui
+      debut: t.debut || t.qui,
+      customN: t.tousLesNJours
     };
     document.getElementById('drawerTitle').textContent = 'Modifier la tâche';
     document.getElementById('addTaskBtn').textContent = 'Enregistrer';
@@ -693,32 +651,29 @@ function renderDrawer(){
   var eg = '';
   Object.keys(CATS).forEach(function(c){
     var info = CATS[c];
-    eg += '<button class="ebtn'+(draft.cat===c?' on':'')+'" data-action="set-cat" data-value="'+c+'"><span class="ei">'+info.e+'</span>'+info.n+'</button>';
+    eg += '<button type="button" class="ebtn'+(draft.cat===c?' on':'')+'" data-action="set-cat" data-value="'+c+'"><span class="ei">'+info.e+'</span>'+info.n+'</button>';
   });
   document.getElementById('egrid').innerHTML = eg;
 
-  // Période
-  var pers = [
-    {k:'daily',     l:'Chaque jour'},
-    {k:'weekly',    l:'Chaque semaine'},
-    {k:'biweekly',  l:'2 semaines'},
-    {k:'triweekly', l:'3 semaines'},
-    {k:'monthly',   l:'Chaque mois'}
-  ];
+  // Récurrence presets + custom
   var fr = '';
-  pers.forEach(function(p){
-    fr += '<button class="fqbtn'+(draft.freq.per===p.k?' on':'')+'" data-action="set-per" data-value="'+p.k+'">'+p.l+'</button>';
+  PRESETS.forEach(function(p){
+    fr += '<button type="button" class="fqbtn'+(draft.tousLesNJours===p.n?' on':'')+'" data-action="set-recur" data-value="'+p.n+'">'+p.l+'</button>';
   });
+  // Bouton custom
+  var isCustom = !PRESETS.some(function(p){ return p.n === draft.tousLesNJours; });
+  fr += '<button type="button" class="fqbtn'+(isCustom?' on':'')+'" data-action="set-recur-custom">Personnalisé…</button>';
   document.getElementById('fqrow').innerHTML = fr;
 
-  // Nb
-  var maxNb = draft.freq.per==='daily' ? 6 : draft.freq.per==='monthly' ? 10 : 7;
-  var fc = '';
-  for(var i=1;i<=maxNb;i++){
-    fc += '<button class="fqcbtn'+(draft.freq.nb===i?' on':'')+'" data-action="set-nb" data-value="'+i+'">'+i+'</button>';
+  // Champ custom
+  var customWrap = document.getElementById('customWrap');
+  if(isCustom){
+    customWrap.classList.remove('is-hidden');
+    document.getElementById('fCustomN').value = draft.tousLesNJours;
+  } else {
+    customWrap.classList.add('is-hidden');
   }
-  document.getElementById('fqcbtns').innerHTML = fc;
-  document.getElementById('fqsum').textContent = freqLabel(draft.freq);
+  document.getElementById('fqsum').textContent = nJoursLabel(draft.tousLesNJours);
 
   // Mode
   document.getElementById('btnRot').className = 'tbtn' + (draft.mode==='rot' ? ' on-dark' : '');
@@ -734,36 +689,33 @@ function saveTask(){
   if(!titre){ toast("Donnez un titre à la tâche"); return; }
   draft.titre = titre;
 
+  // Si on est en mode custom, prendre la valeur du champ
+  var isCustom = !PRESETS.some(function(p){ return p.n === draft.tousLesNJours; });
+  if(isCustom){
+    var n = parseInt(document.getElementById('fCustomN').value, 10);
+    if(!n || n < 1 || n > 365){ toast("Choisissez entre 1 et 365 jours"); return; }
+    draft.tousLesNJours = n;
+  }
+
   if(editingId){
     var t = findTask(editingId);
     if(t){
-      var oldQui = t.qui;
       t.titre = draft.titre;
       t.cat = draft.cat;
-      t.freq = draft.freq;
+      t.tousLesNJours = draft.tousLesNJours;
       t.mode = draft.mode;
       t.debut = draft.debut;
-      // Si on change la personne assignée et mode fix : appliquer
-      if(t.mode==='fix') t.qui = draft.debut;
-      // Reset périodKey pour forcer un recalcul (au cas où la période a changé)
-      var pk = periodKey(t.freq.per);
-      if(t.periodKey !== pk){
-        t.periodKey = pk; t.doneCount = 0; t.lastDoneAt = null;
-      }
-      // Plafonner doneCount si on a baissé nb
-      if(t.doneCount > t.freq.nb) t.doneCount = t.freq.nb;
+      if(t.mode === 'fix') t.qui = draft.debut;
     }
   } else {
     var nt = {
       id: 't_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
       titre: draft.titre,
       cat: draft.cat,
-      freq: draft.freq,
+      tousLesNJours: draft.tousLesNJours,
       mode: draft.mode,
       debut: draft.debut,
       qui: draft.debut,
-      periodKey: periodKey(draft.freq.per),
-      doneCount: 0,
       lastDoneAt: null,
       createdAt: new Date().toISOString()
     };
@@ -776,7 +728,7 @@ function saveTask(){
   toast(editingId ? 'Tâche modifiée' : 'Tâche ajoutée');
 }
 
-// ----- Menu contextuel ---------------------------------------------------
+// ----- Menu et confirm ----------------------------------------------------
 function openMenu(id){
   pendingMenuId = id;
   document.getElementById('menuOv').style.display = 'flex';
@@ -785,7 +737,6 @@ function closeMenu(){
   document.getElementById('menuOv').style.display = 'none';
   pendingMenuId = null;
 }
-
 function askDelete(id){
   pendingDeleteId = id;
   var t = findTask(id);
@@ -797,7 +748,7 @@ function closeConfirm(){
   pendingDeleteId = null;
 }
 
-// ----- Toast & confettis -------------------------------------------------
+// ----- Toast & confettis --------------------------------------------------
 var toastTimer = null;
 function toast(msg){
   var el = document.getElementById('toast');
@@ -808,7 +759,7 @@ function toast(msg){
 }
 
 function confetti(qui){
-  var colors = qui==='gaetan'
+  var colors = qui === 'gaetan'
     ? ['#9E6B45','#C28A5E','#FFD09A','#F5F0E8']
     : ['#8FB05A','#A8C97A','#C8E8A0','#F5F0E8'];
   for(var i=0;i<24;i++){
@@ -831,11 +782,13 @@ function getSettings(){
   try{
     var s = JSON.parse(localStorage.getItem('chez_nous_settings') || '{}');
     return {
-      morning:    s.morning    !== false,
-      morningTime:s.morningTime || '09:00',
-      deadline:   s.deadline   !== false
+      morning:     s.morning     !== false,
+      morningTime: s.morningTime || '09:00',
+      evening:     s.evening     !== false,
+      eveningTime: s.eveningTime || '19:00',
+      visualAlert: s.visualAlert !== false
     };
-  } catch(e){ return {morning:true, morningTime:'09:00', deadline:true}; }
+  } catch(e){ return {morning:true, morningTime:'09:00', evening:true, eveningTime:'19:00', visualAlert:true}; }
 }
 
 function saveSettings(s){
@@ -848,45 +801,47 @@ function clearNotifTimers(){
   notifTimers = [];
 }
 
+function nextOccurrence(timeStr){
+  var parts = (timeStr || '09:00').split(':');
+  var hh = parseInt(parts[0],10) || 9;
+  var mm = parseInt(parts[1],10) || 0;
+  var next = new Date();
+  next.setHours(hh, mm, 0, 0);
+  if(next <= new Date()) next.setDate(next.getDate()+1);
+  return next;
+}
+
+function rappelTexte(prefix){
+  var mesTaches = taches.filter(function(t){ return t.qui === moi; });
+  var late = mesTaches.filter(isLate);
+  var today = mesTaches.filter(isToday);
+  if(late.length === 0 && today.length === 0) return null;
+  var parts = [];
+  if(late.length) parts.push(late.length + ' en retard');
+  if(today.length) parts.push(today.length + ' aujourd\'hui');
+  return prefix + ' : ' + parts.join(', ');
+}
+
 function scheduleNotifications(){
   clearNotifTimers();
   if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
   var s = getSettings();
 
-  // Rappel du matin
   if(s.morning){
-    var mt = (s.morningTime || '09:00').split(':');
-    var hh = parseInt(mt[0],10)||9, mm = parseInt(mt[1],10)||0;
-    var next = new Date();
-    next.setHours(hh, mm, 0, 0);
-    if(next <= new Date()) next.setDate(next.getDate()+1);
-    var ms = next - new Date();
+    var nm = nextOccurrence(s.morningTime);
     notifTimers.push(setTimeout(function(){
-      var rest = taches.filter(function(t){ return t.qui===moi && t.doneCount < t.freq.nb; });
-      if(rest.length > 0){
-        showNotif('Bonjour ' + courtU(moi||'gaetan'),
-                  rest.length + ' tâche'+(rest.length>1?'s':'')+' vous attend'+(rest.length>1?'ent':'')+' aujourd\'hui');
-      }
+      var msg = rappelTexte('Bonjour ' + courtU(moi || 'gaetan'));
+      if(msg) showNotif('☀️ Rappel du matin', msg);
       scheduleNotifications();
-    }, Math.min(ms, 2147483000)));
+    }, Math.min(nm - new Date(), 2147483000)));
   }
-
-  // Rappel de fin de période — chaque tâche dont la période finit aujourd'hui
-  if(s.deadline){
-    var deadline = new Date();
-    deadline.setHours(18,0,0,0);
-    if(deadline > new Date()){
-      notifTimers.push(setTimeout(function(){
-        var urgents = taches.filter(function(t){
-          return t.qui===moi && t.doneCount < t.freq.nb && daysLeft(t.freq.per) <= 0;
-        });
-        if(urgents.length>0){
-          showNotif('⏰ Fin de période',
-                    urgents.length + ' tâche'+(urgents.length>1?'s':'')+' à terminer avant ce soir');
-        }
-        scheduleNotifications();
-      }, deadline - new Date()));
-    }
+  if(s.evening){
+    var ne = nextOccurrence(s.eveningTime);
+    notifTimers.push(setTimeout(function(){
+      var msg = rappelTexte('Bonsoir ' + courtU(moi || 'gaetan'));
+      if(msg) showNotif('🌆 Rappel du soir', msg);
+      scheduleNotifications();
+    }, Math.min(ne - new Date(), 2147483000)));
   }
 }
 
@@ -918,7 +873,7 @@ function activerNotif(){
       scheduleNotifications();
       toast('Rappels activés ✓');
     } else {
-      toast('Rappels désactivés (vous pouvez les réactiver dans ⚙️ Réglages)');
+      toast('Rappels désactivés (réactivable dans ⚙️ Réglages)');
     }
   });
 }
@@ -928,7 +883,9 @@ function openSettings(){
   var s = getSettings();
   document.getElementById('setMorning').checked = s.morning;
   document.getElementById('setMorningTime').value = s.morningTime;
-  document.getElementById('setDeadline').checked = s.deadline;
+  document.getElementById('setEvening').checked = s.evening;
+  document.getElementById('setEveningTime').value = s.eveningTime;
+  document.getElementById('setVisual').checked = s.visualAlert;
   document.getElementById('settingsBg').style.display = 'flex';
 }
 function closeSettings(){ document.getElementById('settingsBg').style.display = 'none'; }
@@ -936,12 +893,16 @@ function persistSettings(){
   var s = {
     morning: document.getElementById('setMorning').checked,
     morningTime: document.getElementById('setMorningTime').value || '09:00',
-    deadline: document.getElementById('setDeadline').checked
+    evening: document.getElementById('setEvening').checked,
+    eveningTime: document.getElementById('setEveningTime').value || '19:00',
+    visualAlert: document.getElementById('setVisual').checked
   };
   saveSettings(s);
-  if(typeof Notification !== 'undefined' && Notification.permission !== 'granted'){
+  // Appliquer indicateur visuel
+  document.body.classList.toggle('no-late-dot', !s.visualAlert);
+  if(typeof Notification !== 'undefined' && Notification.permission !== 'granted' && (s.morning || s.evening)){
     Notification.requestPermission().then(function(p){
-      if(p==='granted') scheduleNotifications();
+      if(p === 'granted') scheduleNotifications();
     });
   } else {
     scheduleNotifications();
@@ -958,10 +919,9 @@ function chooseProfile(p){
   localStorage.setItem('moi', p);
   document.getElementById('welcome').style.display = 'none';
   afficher();
+  scheduleNotifications();
 }
-function showWelcome(){
-  document.getElementById('welcome').style.display = 'flex';
-}
+function showWelcome(){ document.getElementById('welcome').style.display = 'flex'; }
 function setTab(v){
   document.getElementById('tabT').classList.toggle('on', v==='t');
   document.getElementById('tabH').classList.toggle('on', v==='h');
@@ -985,6 +945,7 @@ function bindEvents(){
     var a = btn.dataset.action;
     var v = btn.dataset.value;
     var id = btn.dataset.id;
+    ev.preventDefault();
 
     switch(a){
       case 'choose-profile': chooseProfile(v); break;
@@ -994,15 +955,8 @@ function bindEvents(){
       case 'set-tab': setTab(v); break;
       case 'set-user-filter': setUserFilter(v); break;
       case 'set-category': setCategory(v); break;
-      case 'check-task':
-        // Évite de déclencher 2x (clic sur card + clic sur bouton interne)
-        ev.stopPropagation();
-        checkTask(id || btn.closest('.tc-card').dataset.id);
-        break;
-      case 'open-menu':
-        ev.stopPropagation();
-        openMenu(id);
-        break;
+      case 'check-task': checkTask(id); break;
+      case 'open-menu': openMenu(id); break;
       case 'close-menu': closeMenu(); break;
       case 'menu-edit':   { var mid = pendingMenuId; closeMenu(); openDrawer(mid); break; }
       case 'menu-undo':   { var mid2 = pendingMenuId; closeMenu(); decrementTask(mid2); break; }
@@ -1013,12 +967,20 @@ function bindEvents(){
       case 'close-drawer': closeDrawer(); break;
       case 'save-task': saveTask(); break;
       case 'set-cat': draft.cat = v; renderDrawer(); break;
-      case 'set-per':
-        draft.freq.per = v;
-        var maxNb = v==='daily'?6:v==='monthly'?10:7;
-        if(draft.freq.nb > maxNb) draft.freq.nb = maxNb;
-        renderDrawer(); break;
-      case 'set-nb': draft.freq.nb = parseInt(v,10) || 1; renderDrawer(); break;
+      case 'set-recur':
+        draft.tousLesNJours = parseInt(v,10) || 7;
+        renderDrawer();
+        break;
+      case 'set-recur-custom':
+        // Bascule en mode custom : on initialise avec une valeur non-preset
+        if(PRESETS.some(function(p){ return p.n === draft.tousLesNJours; })){
+          draft.tousLesNJours = draft.customN && !PRESETS.some(function(p){ return p.n === draft.customN; })
+            ? draft.customN
+            : 5;
+        }
+        renderDrawer();
+        setTimeout(function(){ var f=document.getElementById('fCustomN'); if(f) f.focus(); }, 50);
+        break;
       case 'set-mode': draft.mode = v; renderDrawer(); break;
       case 'set-start': draft.debut = v; renderDrawer(); break;
       case 'open-settings': openSettings(); break;
@@ -1027,7 +989,17 @@ function bindEvents(){
     }
   });
 
-  // Fermer overlays en cliquant en dehors
+  // Champ custom : MàJ live de la valeur
+  document.body.addEventListener('input', function(ev){
+    if(ev.target && ev.target.id === 'fCustomN'){
+      var n = parseInt(ev.target.value, 10);
+      if(n >= 1 && n <= 365){
+        draft.tousLesNJours = n;
+        document.getElementById('fqsum').textContent = nJoursLabel(n);
+      }
+    }
+  });
+
   document.getElementById('drawerBg').addEventListener('click', function(e){
     if(e.target.id === 'drawerBg') closeDrawer();
   });
@@ -1070,20 +1042,22 @@ if('serviceWorker' in navigator){
   });
 }
 
-// ----- Notifications banner -----------------------------------------------
-// On n'affiche la bannière que si le navigateur supporte ET que l'utilisateur
-// n'a pas encore choisi (state 'default'). Sur 'denied' ou 'granted' on cache.
+// ----- Notif banner -------------------------------------------------------
 if(typeof Notification !== 'undefined' && Notification.permission === 'default'){
   document.getElementById('notif').classList.remove('is-hidden');
 }
 
-// ----- Polling + rollover horaire -----------------------------------------
+// Indicateur visuel : appliquer le réglage au chargement
+(function(){
+  var s = getSettings();
+  document.body.classList.toggle('no-late-dot', !s.visualAlert);
+})();
+
+// ----- Polling + refresh quotidien ----------------------------------------
 setInterval(poll, 20000);
-// Rollover toutes les 5 minutes au cas où la période change pendant que l'app est ouverte
-setInterval(function(){
-  var changed = taches.some(function(t){ return t.periodKey !== periodKey(t.freq.per); });
-  if(changed){ rolloverTasks(); afficher(); }
-}, 5*60*1000);
+// Re-render toutes les minutes pour rafraîchir les chips d'échéance et basculer
+// les tâches d'une section à l'autre quand on franchit minuit.
+setInterval(afficher, 60000);
 
 // ----- Bootstrap ----------------------------------------------------------
 bindEvents();
