@@ -408,7 +408,16 @@ function catPills(){
   document.getElementById('catRow').innerHTML = html;
 }
 
-// ----- Carte tâche (layout compact, 1 ligne titre + 1 ligne méta) ---------
+// ----- Carte tâche (ultra-compact + compteur du mois) ---------------------
+function countThisMonth(taskId){
+  var cut = Date.now() - 30*86400000;
+  var n = 0;
+  for(var i=0;i<hist.length;i++){
+    if(hist[i].taskId === taskId && new Date(hist[i].at).getTime() >= cut) n++;
+  }
+  return n;
+}
+
 function carteHtml(t){
   var qcls = t.qui === 'gaetan' ? 'g' : 'a';
   var d = daysUntilDue(t);
@@ -421,38 +430,44 @@ function carteHtml(t){
   else classes += ' upcoming';
 
   var color = qcls === 'g' ? '#9E6B45' : '#8FB05A';
-  var R = 21, C = (2*Math.PI*R).toFixed(2);
-
-  // Anneau visible si due/retard (action attendue), vide si à venir (juste un fond)
+  var R = 16, C = (2*Math.PI*R).toFixed(2);
   var ringOffset = (late || today) ? '0' : C;
-
-  // Icône dans l'anneau : ! pour retard, rien pour aujourd'hui/à venir
   var ringIcon = late ? '!' : '';
 
   var dueText = dueLabel(t);
   var dueCls = late ? 'late' : today ? 'today' : 'soon';
-
   var dot = late ? '<span class="late-dot" aria-hidden="true"></span>' : '';
+
+  // Compteur du mois (30 derniers jours)
+  var nMois = countThisMonth(t.id);
+  var countHtml = nMois > 0
+    ? '<span class="meta-sep">·</span><span class="meta-count" title="fois faite dans les 30 derniers jours">×'+nMois+' / mois</span>'
+    : '';
+
+  // Icône catégorie discrète devant le titre
+  var info = CATS[t.cat] || {n:'',e:''};
+  var catIco = info.e ? '<span class="cat-ico" aria-hidden="true">'+info.e+'</span>' : '';
 
   return '<article class="'+classes+'" data-id="'+t.id+'">'
     + '<div class="tc-strip"></div>'
     + dot
     + '<button type="button" class="tc-check" data-action="check-task" data-id="'+t.id+'" aria-label="Valider : '+escapeHtml(t.titre)+'">'
-    +   '<svg class="ring" width="48" height="48" viewBox="0 0 48 48" aria-hidden="true">'
-    +     '<circle class="ring-bg" cx="24" cy="24" r="'+R+'" fill="none" stroke-width="3"/>'
-    +     '<circle class="ring-fill" cx="24" cy="24" r="'+R+'" fill="none" stroke="'+color+'" stroke-width="3" stroke-linecap="round" stroke-dasharray="'+C+'" stroke-dashoffset="'+ringOffset+'" transform="rotate(-90 24 24)"/>'
+    +   '<svg class="ring" width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">'
+    +     '<circle class="ring-bg" cx="18" cy="18" r="'+R+'" fill="none" stroke-width="2.5"/>'
+    +     '<circle class="ring-fill" cx="18" cy="18" r="'+R+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="'+C+'" stroke-dashoffset="'+ringOffset+'" transform="rotate(-90 18 18)"/>'
     +   '</svg>'
     +   '<span class="ring-icon">'+ringIcon+'</span>'
     +   '<span class="ring-tick" aria-hidden="true">✓</span>'
     + '</button>'
     + '<div class="tc-body">'
-    +   '<div class="tc-title">'+escapeHtml(t.titre)+'</div>'
+    +   '<div class="tc-title">'+catIco+escapeHtml(t.titre)+'</div>'
     +   '<div class="tc-meta">'
     +     '<span class="meta-who '+qcls+'">'+(qcls==='g'?'🤎':'💚')+' '+courtU(t.qui)+'</span>'
     +     '<span class="meta-sep">·</span>'
     +     '<span class="meta-due '+dueCls+'">'+dueText+'</span>'
     +     '<span class="meta-sep">·</span>'
     +     '<span class="meta-freq">'+nJoursLabelShort(t.tousLesNJours)+'</span>'
+    +     countHtml
     +   '</div>'
     + '</div>'
     + '<button type="button" class="menu-btn" data-action="open-menu" data-id="'+t.id+'" aria-label="Menu">⋯</button>'
@@ -503,6 +518,29 @@ function liste(){
   }
 
   document.getElementById('listMain').innerHTML = html;
+
+  // FIX BLINDÉ : binding DIRECT sur chaque bouton après injection HTML.
+  // Garantit que le clic fonctionne même si la délégation body échouait.
+  var checks = document.querySelectorAll('#listMain .tc-check');
+  for(var i=0;i<checks.length;i++){
+    (function(b){
+      b.addEventListener('click', function(ev){
+        ev.preventDefault();
+        ev.stopPropagation();
+        checkTask(b.dataset.id);
+      });
+    })(checks[i]);
+  }
+  var menus = document.querySelectorAll('#listMain .menu-btn');
+  for(var j=0;j<menus.length;j++){
+    (function(b){
+      b.addEventListener('click', function(ev){
+        ev.preventDefault();
+        ev.stopPropagation();
+        openMenu(b.dataset.id);
+      });
+    })(menus[j]);
+  }
 }
 
 function listeHist(){
@@ -803,13 +841,14 @@ function getSettings(){
   try{
     var s = JSON.parse(localStorage.getItem('chez_nous_settings') || '{}');
     return {
+      notifScope:  s.notifScope  || 'all',
       morning:     s.morning     !== false,
       morningTime: s.morningTime || '09:00',
       evening:     s.evening     !== false,
       eveningTime: s.eveningTime || '19:00',
       visualAlert: s.visualAlert !== false
     };
-  } catch(e){ return {morning:true, morningTime:'09:00', evening:true, eveningTime:'19:00', visualAlert:true}; }
+  } catch(e){ return {notifScope:'all', morning:true, morningTime:'09:00', evening:true, eveningTime:'19:00', visualAlert:true}; }
 }
 
 function saveSettings(s){
@@ -900,6 +939,8 @@ function activerNotif(){
 }
 
 // ----- Settings UI --------------------------------------------------------
+var _draftScope = 'all'; // valeur en cours d'édition dans le drawer
+
 function openSettings(){
   var s = getSettings();
   // Profil
@@ -916,32 +957,59 @@ function openSettings(){
   document.getElementById('setEvening').checked = s.evening;
   document.getElementById('setEveningTime').value = s.eveningTime;
   document.getElementById('setVisual').checked = s.visualAlert;
-  // Stats
-  refreshStats();
-  // À propos
-  var av = document.getElementById('aboutVersion');
-  if(av) av.textContent = '2.0';
-  var au = document.getElementById('aboutUpdated');
-  if(au) au.textContent = new Date().toLocaleString('fr-FR', {dateStyle:'short', timeStyle:'short'});
+  // Filtre des notifs
+  _draftScope = s.notifScope || 'all';
+  renderScopeButtons();
+  renderNotifPreview();
   document.getElementById('settingsBg').style.display = 'flex';
 }
 function closeSettings(){ document.getElementById('settingsBg').style.display = 'none'; }
 
-function refreshStats(){
-  var n = taches.length;
-  var late = taches.filter(isLate).length;
-  var today = taches.filter(isToday).length;
-  // Faites dans les 30 derniers jours
-  var cut = Date.now() - 30*86400000;
-  var done30 = hist.filter(function(h){ return new Date(h.at).getTime() >= cut; }).length;
-  var statT = document.getElementById('statTotal');     if(statT) statT.textContent = n;
-  var statL = document.getElementById('statLate');      if(statL) statL.textContent = late;
-  var statTo= document.getElementById('statToday');     if(statTo) statTo.textContent = today;
-  var statD = document.getElementById('statDone30');    if(statD) statD.textContent = done30;
+function renderScopeButtons(){
+  var grp = document.getElementById('notifScopeGroup');
+  if(!grp) return;
+  var btns = grp.querySelectorAll('.radio-btn');
+  for(var i=0;i<btns.length;i++){
+    btns[i].classList.toggle('on', btns[i].dataset.value === _draftScope);
+  }
+}
+
+function setNotifScope(v){
+  _draftScope = v;
+  renderScopeButtons();
+  renderNotifPreview();
+}
+
+// Construit le texte qu'aurait la notification matin avec les réglages actuels
+function buildNotifPreview(){
+  var list = taches.filter(function(t){
+    if(_draftScope === 'mine')  return t.qui === moi && (isLate(t) || isToday(t));
+    if(_draftScope === 'late')  return isLate(t);
+    return isLate(t) || isToday(t);
+  });
+  if(!list.length){
+    return '🎉 Tout est à jour, rien à faire !';
+  }
+  var lates = list.filter(isLate);
+  var todays = list.filter(isToday);
+  var lines = [];
+  if(lates.length){
+    lines.push('⚠ ' + lates.length + ' en retard : ' + lates.slice(0,3).map(function(t){ return t.titre; }).join(', ') + (lates.length>3?'…':''));
+  }
+  if(todays.length && _draftScope !== 'late'){
+    lines.push('📅 ' + todays.length + " à faire aujourd'hui : " + todays.slice(0,3).map(function(t){ return t.titre; }).join(', ') + (todays.length>3?'…':''));
+  }
+  return lines.join('\n');
+}
+
+function renderNotifPreview(){
+  var el = document.getElementById('notifPreviewBody');
+  if(el) el.textContent = buildNotifPreview();
 }
 
 function persistSettings(){
   var s = {
+    notifScope: _draftScope,
     morning: document.getElementById('setMorning').checked,
     morningTime: document.getElementById('setMorningTime').value || '09:00',
     evening: document.getElementById('setEvening').checked,
@@ -961,40 +1029,30 @@ function persistSettings(){
   toast('Réglages enregistrés ✓');
 }
 
-function exportData(){
-  var data = {
-    version: 2,
-    exportedAt: new Date().toISOString(),
-    profile: moi,
-    taches: taches,
-    hist: hist
-  };
-  var blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = 'chez-nous-' + dateLocal() + '.json';
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(function(){
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 100);
-  toast('Données exportées');
-}
-
-function askReset(){
-  if(!confirm('Effacer toutes les tâches et l\'historique ?\n\nCette action est irréversible. Une sauvegarde JSON sera téléchargée avant.')) return;
-  exportData();
-  setTimeout(function(){
-    taches = DEF.map(migrateTask);
-    hist = [];
-    localDirty = Date.now();
-    afficher();
-    sauver();
-    closeSettings();
-    toast('Réinitialisé. Sauvegarde téléchargée.');
-  }, 300);
+// Envoie immédiatement une notification de test (le contenu de l'aperçu)
+function testNotification(){
+  if(typeof Notification === 'undefined'){
+    toast("Ce navigateur ne supporte pas les notifications");
+    return;
+  }
+  function send(){
+    var body = buildNotifPreview();
+    try{
+      new Notification('🏡 Chez Nous — test', { body: body, icon: 'icon.png', badge: 'icon.png' });
+      toast('Notification envoyée ✓');
+    } catch(e){
+      toast('Échec : ' + e.message);
+    }
+  }
+  if(Notification.permission === 'granted'){ send(); }
+  else if(Notification.permission !== 'denied'){
+    Notification.requestPermission().then(function(p){
+      if(p === 'granted') send();
+      else toast('Permission refusée');
+    });
+  } else {
+    toast('Notifications bloquées dans les paramètres du navigateur');
+  }
 }
 
 // ============================================================================
@@ -1072,9 +1130,9 @@ function bindEvents(){
       case 'open-settings': openSettings(); break;
       case 'close-settings': closeSettings(); break;
       case 'save-settings': persistSettings(); break;
-      case 'export-data': exportData(); break;
-      case 'reset-data': askReset(); break;
       case 'change-profile-settings': closeSettings(); showWelcome(); break;
+      case 'set-notif-scope': setNotifScope(v); break;
+      case 'test-notif': testNotification(); break;
     }
   });
 

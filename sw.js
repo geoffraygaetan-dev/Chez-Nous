@@ -1,7 +1,7 @@
 // Service worker — Chez Nous
 // Cache statique simple + relais des notifications.
 
-const CACHE_NAME = 'cheznous-static-v8';
+const CACHE_NAME = 'cheznous-static-v9';
 const APP_SHELL = [
   './',
   './index.html',

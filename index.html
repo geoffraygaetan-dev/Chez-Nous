@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=6">
+<link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
 
@@ -190,17 +190,6 @@
       </div>
     </div>
 
-    <!-- APERÇU -->
-    <div class="settings-section">
-      <div class="section-label">📊 Aperçu</div>
-      <div class="stats-grid">
-        <div class="stat-box"><div class="stat-n" id="statTotal">0</div><div class="stat-l">Tâches actives</div></div>
-        <div class="stat-box"><div class="stat-n late" id="statLate">0</div><div class="stat-l">En retard</div></div>
-        <div class="stat-box"><div class="stat-n today" id="statToday">0</div><div class="stat-l">Aujourd'hui</div></div>
-        <div class="stat-box"><div class="stat-n" id="statDone30">0</div><div class="stat-l">Faites · 30 j</div></div>
-      </div>
-    </div>
-
     <!-- NOTIFICATIONS -->
     <div class="settings-section">
       <div class="section-label">🔔 Notifications</div>
@@ -229,7 +218,29 @@
         <input class="finput time-input" type="time" id="setEveningTime" value="19:00">
       </div>
 
-      <div class="setting-info">ℹ️ Sur iOS, les rappels en arrière-plan ne fonctionnent qu'en PWA installée (à partir d'iOS 16.4). Sur Android et ordinateur, ils marchent même app fermée tant que le navigateur tourne.</div>
+      <!-- Filtre type de notifs -->
+      <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:8px">
+        <div>
+          <div class="setting-title">📨 Que recevoir ?</div>
+          <div class="setting-sub">Choisis quelles tâches déclenchent les rappels.</div>
+        </div>
+        <div class="radio-group" id="notifScopeGroup">
+          <button type="button" class="radio-btn" data-action="set-notif-scope" data-value="all">Toutes les tâches du foyer</button>
+          <button type="button" class="radio-btn" data-action="set-notif-scope" data-value="mine">Mes tâches uniquement</button>
+          <button type="button" class="radio-btn" data-action="set-notif-scope" data-value="late">Retards seulement</button>
+        </div>
+      </div>
+
+      <!-- Aperçu du contenu -->
+      <div class="notif-preview" id="notifPreview">
+        <div class="notif-preview-label">Aperçu de la prochaine notification :</div>
+        <div class="notif-preview-body" id="notifPreviewBody">—</div>
+      </div>
+
+      <!-- Tester maintenant -->
+      <button class="btn-action" data-action="test-notif" style="margin-top:8px">� <span>Tester maintenant</span></button>
+
+      <div class="setting-info">ℹ️ Sur iOS, les rappels en arrière-plan ne fonctionnent qu'en PWA installée (iOS 16.4+). Sur Android et ordinateur, ils marchent même app fermée tant que le navigateur tourne.</div>
     </div>
 
     <!-- AFFICHAGE -->
@@ -244,25 +255,6 @@
       </div>
     </div>
 
-    <!-- DONNÉES -->
-    <div class="settings-section">
-      <div class="section-label">💾 Données</div>
-      <div class="action-btns">
-        <button class="btn-action" data-action="export-data">📥 <span>Exporter mes données (.json)</span></button>
-        <button class="btn-action danger" data-action="reset-data">⚠️ <span>Tout réinitialiser…</span></button>
-      </div>
-    </div>
-
-    <!-- À PROPOS -->
-    <div class="settings-section">
-      <div class="section-label">ℹ️ À propos</div>
-      <div class="about-grid">
-        <div class="about-row"><span>Version</span><span id="aboutVersion">2.0</span></div>
-        <div class="about-row"><span>Stockage</span><span>Firebase</span></div>
-        <div class="about-row"><span>Ouvert</span><span id="aboutUpdated">—</span></div>
-      </div>
-    </div>
-
     <div class="div"></div>
     <div class="fbtns">
       <button class="fbtn-sec" data-action="close-settings">Fermer</button>
@@ -273,7 +265,7 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="config.js?v=6" defer></script>
-<script src="app.js?v=6" defer></script>
+<script src="config.js?v=7" defer></script>
+<script src="app.js?v=7" defer></script>
 </body>
 </html>
