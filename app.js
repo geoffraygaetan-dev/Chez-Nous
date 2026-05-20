@@ -105,6 +105,71 @@ function nJoursLabelShort(n){
   return 'tous les ' + n + ' jours';
 }
 
+// ----- Récurrence riche : périodique OU fréquence -------------------------
+// Schéma : t.recur = { kind:'period'|'freq', count:N, unit:'day'|'week'|'month'|'year' }
+// - period day N    → "Tous les N jours"     (count en jours)
+// - period week N   → "Toutes les N semaines"
+// - period month N  → "Tous les N mois"
+// - period year N   → "Tous les N ans"
+// - freq week N     → "N fois par semaine"   (count = nombre de fois)
+// - freq month N    → "N fois par mois"
+// On dérive `tousLesNJours` (jours entre deux occurrences) pour la planif
+// existante, sans casser la base actuelle.
+
+function recurToDays(r){
+  if(!r) return 7;
+  var c = Math.max(1, parseInt(r.count, 10) || 1);
+  if(r.kind === 'freq'){
+    if(r.unit === 'week')  return Math.max(1, Math.round(7 / c));
+    if(r.unit === 'month') return Math.max(1, Math.round(30 / c));
+    return 7;
+  }
+  // period (par défaut)
+  if(r.unit === 'week')  return c * 7;
+  if(r.unit === 'month') return c * 30;
+  if(r.unit === 'year')  return c * 365;
+  return c; // day
+}
+
+function recurLabel(r){
+  if(!r) return 'tous les 7 jours';
+  var c = Math.max(1, parseInt(r.count, 10) || 1);
+  if(r.kind === 'freq'){
+    var per = r.unit === 'month' ? 'mois' : 'semaine';
+    if(c === 1) return '1 fois par ' + per;
+    return c + ' fois par ' + per;
+  }
+  // period
+  if(r.unit === 'week'){
+    return c === 1 ? 'chaque semaine' : 'toutes les ' + c + ' semaines';
+  }
+  if(r.unit === 'month'){
+    return c === 1 ? 'chaque mois' : 'tous les ' + c + ' mois';
+  }
+  if(r.unit === 'year'){
+    return c === 1 ? 'chaque année' : 'tous les ' + c + ' ans';
+  }
+  // day
+  if(c === 1) return 'tous les jours';
+  return 'tous les ' + c + ' jours';
+}
+
+// Garantit qu'une tâche a un objet recur valide (pour back-compat).
+function ensureRecur(t){
+  if(t && t.recur && t.recur.kind && t.recur.unit) return t.recur;
+  var n = (t && typeof t.tousLesNJours === 'number' && t.tousLesNJours > 0)
+    ? t.tousLesNJours : 7;
+  // Convertit l'ancien format en period le plus naturel
+  if(n === 7)  return {kind:'period', count:1, unit:'week'};
+  if(n === 14) return {kind:'period', count:2, unit:'week'};
+  if(n === 21) return {kind:'period', count:3, unit:'week'};
+  if(n === 30) return {kind:'period', count:1, unit:'month'};
+  if(n === 60) return {kind:'period', count:2, unit:'month'};
+  if(n === 90) return {kind:'period', count:3, unit:'month'};
+  if(n === 365)return {kind:'period', count:1, unit:'year'};
+  return {kind:'period', count:n, unit:'day'};
+}
+
 // Libellé d'échéance pour la chip
 function dueLabel(t){
   var d = daysUntilDue(t);
@@ -139,13 +204,15 @@ function freqToDays(per, nb){
 function migrateTask(t){
   // Si déjà au nouveau format
   if(typeof t.tousLesNJours === 'number' && t.tousLesNJours > 0){
-    return Object.assign({}, t, {
+    var migrated = Object.assign({}, t, {
       mode: t.mode || 'fix',
       qui: t.qui || t.debut || 'gaetan',
       debut: t.debut || t.qui || 'gaetan',
       lastDoneAt: t.lastDoneAt || null,
       createdAt: t.createdAt || new Date().toISOString()
     });
+    migrated.recur = ensureRecur(migrated);
+    return migrated;
   }
 
   // Format intermédiaire {freq:{per,nb}}
@@ -173,7 +240,7 @@ function migrateTask(t){
   var lastDoneAt = t.lastDoneAt || null;
   if(t.fait && !lastDoneAt) lastDoneAt = new Date().toISOString();
 
-  return {
+  var base = {
     id: t.id || ('t_' + Date.now() + '_' + Math.random().toString(36).slice(2,7)),
     titre: t.titre || 'Tâche',
     cat: cat,
@@ -184,6 +251,8 @@ function migrateTask(t){
     lastDoneAt: lastDoneAt,
     createdAt: t.createdAt || new Date().toISOString()
   };
+  base.recur = ensureRecur(base);
+  return base;
 }
 
 function migrateAll(j){
@@ -512,7 +581,7 @@ function carteHtml(t){
   //                la troncature et garder l'info la plus utile)
   var metaTail = '';
   if(late || today){
-    metaTail = '<span class="meta-sep">·</span><span class="meta-freq">'+nJoursLabelShort(t.tousLesNJours)+'</span>';
+    metaTail = '<span class="meta-sep">·</span><span class="meta-freq">'+recurLabel(ensureRecur(t))+'</span>';
   } else {
     var dueLab;
     if(d === 1) dueLab = 'demain';
@@ -575,17 +644,34 @@ function liste(){
   if(tcCnt) tcCnt.classList.toggle('has-late', late.length > 0);
 
   var html = '';
+  // Render défensif : si carteHtml jette sur UNE tâche, les autres s'affichent
+  // quand même (avec une carte d'erreur visible à la place de la faulty).
+  function safeRender(list){
+    return list.map(function(t){
+      try { return carteHtml(t); }
+      catch(err){
+        console.error('carteHtml a échoué pour', t, err);
+        return '<article class="tc-card upcoming" data-id="'+(t && t.id || '')+'">'
+          + '<div class="tc-strip"></div>'
+          + '<div class="tc-body"><div class="tc-title">⚠️ '+escapeHtml((t && t.titre) || 'Tâche cassée')+'</div>'
+          + '<div class="tc-meta">Erreur d\'affichage — touchez ⋯ pour supprimer</div></div>'
+          + '<button type="button" class="menu-btn" data-action="open-menu" data-id="'+(t && t.id || '')+'" aria-label="Menu">⋯</button>'
+          + '</article>';
+      }
+    }).join('');
+  }
+
   if(late.length){
     html += '<div class="shd shd-late">🔴 En retard <span class="sbadge sbadge-late">'+late.length+'</span></div>';
-    html += late.map(carteHtml).join('');
+    html += safeRender(late);
   }
   if(todayArr.length){
     html += '<div class="shd">🟡 Aujourd\'hui <span class="sbadge sbadge-today">'+todayArr.length+'</span></div>';
-    html += todayArr.map(carteHtml).join('');
+    html += safeRender(todayArr);
   }
   if(upcoming.length){
     html += '<div class="shd">⚪ À venir <span class="sbadge sbadge-upcoming">'+upcoming.length+'</span></div>';
-    html += upcoming.map(carteHtml).join('');
+    html += safeRender(upcoming);
   }
   if(vis.length === 0){
     html = '<div class="empty"><div class="empty-icon">✨</div><div class="empty-title">Rien ici</div><div class="empty-sub">Touchez le bouton + en bas à droite pour ajouter une tâche.</div></div>';
@@ -718,10 +804,9 @@ function defaultDraft(){
     id: null,
     titre: '',
     cat: 'menage',
-    tousLesNJours: 7,
+    recur: {kind:'period', count:1, unit:'week'},
     mode: 'rot',
-    debut: 'gaetan',
-    customN: 7
+    debut: 'gaetan'
   };
 }
 
@@ -730,14 +815,14 @@ function openDrawer(taskId){
   if(taskId){
     var t = findTask(taskId);
     if(!t) return;
+    var r = ensureRecur(t);
     draft = {
       id: t.id,
       titre: t.titre,
       cat: t.cat,
-      tousLesNJours: t.tousLesNJours,
+      recur: {kind:r.kind, count:r.count, unit:r.unit},
       mode: t.mode,
-      debut: t.debut || t.qui,
-      customN: t.tousLesNJours
+      debut: t.debut || t.qui
     };
     document.getElementById('drawerTitle').textContent = 'Modifier la tâche';
     document.getElementById('addTaskBtn').textContent = 'Enregistrer';
@@ -760,35 +845,74 @@ function closeDrawer(){
 
 function renderDrawer(){
   if(!draft) return;
-  // Catégories
+  if(!draft.recur) draft.recur = {kind:'period', count:1, unit:'week'};
+
+  // Catégorie (caché — auto-emoji depuis le titre, on garde l'état pour compat)
   var eg = '';
   Object.keys(CATS).forEach(function(c){
     var info = CATS[c];
     eg += '<button type="button" class="ebtn'+(draft.cat===c?' on':'')+'" data-action="set-cat" data-value="'+c+'"><span class="ei">'+info.e+'</span>'+info.n+'</button>';
   });
-  document.getElementById('egrid').innerHTML = eg;
-  bindActions(document.getElementById('egrid'));
+  var egEl = document.getElementById('egrid');
+  if(egEl){ egEl.innerHTML = eg; bindActions(egEl); }
 
-  // Récurrence presets + custom
+  // --- Récurrence : deux modes (Périodique / Fréquence) ----------------
+  var r = draft.recur;
   var fr = '';
-  PRESETS.forEach(function(p){
-    fr += '<button type="button" class="fqbtn'+(draft.tousLesNJours===p.n?' on':'')+'" data-action="set-recur" data-value="'+p.n+'">'+p.l+'</button>';
-  });
-  // Bouton custom
-  var isCustom = !PRESETS.some(function(p){ return p.n === draft.tousLesNJours; });
-  fr += '<button type="button" class="fqbtn'+(isCustom?' on':'')+'" data-action="set-recur-custom">Personnalisé…</button>';
+  // Toggle Périodique / Fréquence
+  fr += '<div class="rk-toggle">';
+  fr +=   '<button type="button" class="rk-btn'+(r.kind==='period'?' on':'')+'" data-action="set-recur-kind" data-value="period">⏱ Périodique</button>';
+  fr +=   '<button type="button" class="rk-btn'+(r.kind==='freq'?' on':'')+'" data-action="set-recur-kind" data-value="freq">🔁 Fréquence</button>';
+  fr += '</div>';
+
+  if(r.kind === 'period'){
+    // Tous les [N] [jour/semaine/mois/an]
+    fr += '<div class="rk-label">Tous les</div>';
+    fr += '<div class="rk-counts">';
+    var presetCounts = [1,2,3,4,5,6,7,10,14,15];
+    presetCounts.forEach(function(n){
+      fr += '<button type="button" class="rk-num'+(r.count===n?' on':'')+'" data-action="set-recur-count" data-value="'+n+'">'+n+'</button>';
+    });
+    fr += '<button type="button" class="rk-num rk-more" data-action="set-recur-count-custom">…</button>';
+    fr += '</div>';
+    fr += '<div class="rk-units">';
+    [['day','jour'+(r.count>1?'s':'')],['week','semaine'+(r.count>1?'s':'')],['month','mois'],['year','an'+(r.count>1?'s':'')]].forEach(function(u){
+      fr += '<button type="button" class="rk-unit'+(r.unit===u[0]?' on':'')+'" data-action="set-recur-unit" data-value="'+u[0]+'">'+u[1]+'</button>';
+    });
+    fr += '</div>';
+  } else {
+    // [N] fois par [semaine/mois]
+    fr += '<div class="rk-counts">';
+    for(var i=1;i<=7;i++){
+      fr += '<button type="button" class="rk-num'+(r.count===i?' on':'')+'" data-action="set-recur-count" data-value="'+i+'">'+i+'</button>';
+    }
+    fr += '<button type="button" class="rk-num rk-more" data-action="set-recur-count-custom">…</button>';
+    fr += '</div>';
+    fr += '<div class="rk-label">fois par</div>';
+    fr += '<div class="rk-units">';
+    [['week','semaine'],['month','mois']].forEach(function(u){
+      fr += '<button type="button" class="rk-unit'+(r.unit===u[0]?' on':'')+'" data-action="set-recur-unit" data-value="'+u[0]+'">'+u[1]+'</button>';
+    });
+    fr += '</div>';
+  }
+
   document.getElementById('fqrow').innerHTML = fr;
   bindActions(document.getElementById('fqrow'));
 
-  // Champ custom
+  // Champ custom (entier libre)
   var customWrap = document.getElementById('customWrap');
+  var allowedPresets = (r.kind === 'period') ? [1,2,3,4,5,6,7,10,14,15] : [1,2,3,4,5,6,7];
+  var isCustom = allowedPresets.indexOf(r.count) === -1;
   if(isCustom){
     customWrap.classList.remove('is-hidden');
-    document.getElementById('fCustomN').value = draft.tousLesNJours;
+    var labelEl = customWrap.querySelector('.flabel');
+    if(labelEl) labelEl.textContent = r.kind === 'freq' ? 'Combien de fois ?' : 'Tous les combien ?';
+    document.getElementById('fCustomN').value = r.count;
+    document.getElementById('fCustomN').max = r.kind === 'freq' ? 30 : 365;
   } else {
     customWrap.classList.add('is-hidden');
   }
-  document.getElementById('fqsum').textContent = nJoursLabel(draft.tousLesNJours);
+  document.getElementById('fqsum').textContent = '✓ ' + recurLabel(r);
 
   // Mode
   document.getElementById('btnRot').className = 'tbtn' + (draft.mode==='rot' ? ' on-dark' : '');
@@ -804,20 +928,29 @@ function saveTask(){
   if(!titre){ toast("Donnez un titre à la tâche"); return; }
   draft.titre = titre;
 
-  // Si on est en mode custom, prendre la valeur du champ
-  var isCustom = !PRESETS.some(function(p){ return p.n === draft.tousLesNJours; });
-  if(isCustom){
+  // Lecture du champ custom si visible
+  var customWrap = document.getElementById('customWrap');
+  if(customWrap && !customWrap.classList.contains('is-hidden')){
     var n = parseInt(document.getElementById('fCustomN').value, 10);
-    if(!n || n < 1 || n > 365){ toast("Choisissez entre 1 et 365 jours"); return; }
-    draft.tousLesNJours = n;
+    var max = draft.recur.kind === 'freq' ? 30 : 365;
+    if(!n || n < 1 || n > max){ toast('Choisir entre 1 et '+max); return; }
+    draft.recur.count = n;
   }
+
+  // Valide unit selon kind
+  if(draft.recur.kind === 'freq' && draft.recur.unit !== 'week' && draft.recur.unit !== 'month'){
+    draft.recur.unit = 'week';
+  }
+
+  var derivedDays = recurToDays(draft.recur);
 
   if(editingId){
     var t = findTask(editingId);
     if(t){
       t.titre = draft.titre;
       t.cat = draft.cat;
-      t.tousLesNJours = draft.tousLesNJours;
+      t.recur = {kind:draft.recur.kind, count:draft.recur.count, unit:draft.recur.unit};
+      t.tousLesNJours = derivedDays;
       t.mode = draft.mode;
       t.debut = draft.debut;
       if(t.mode === 'fix') t.qui = draft.debut;
@@ -827,7 +960,8 @@ function saveTask(){
       id: 't_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
       titre: draft.titre,
       cat: draft.cat,
-      tousLesNJours: draft.tousLesNJours,
+      recur: {kind:draft.recur.kind, count:draft.recur.count, unit:draft.recur.unit},
+      tousLesNJours: derivedDays,
       mode: draft.mode,
       debut: draft.debut,
       qui: draft.debut,
@@ -1177,15 +1311,32 @@ function dispatchAction(btn, ev){
     case 'close-drawer': closeDrawer(); break;
     case 'save-task': saveTask(); break;
     case 'set-cat': draft.cat = v; renderDrawer(); break;
-    case 'set-recur':
-      draft.tousLesNJours = parseInt(v,10) || 7;
+    case 'set-recur-kind':
+      if(!draft.recur) draft.recur = {kind:'period',count:1,unit:'week'};
+      draft.recur.kind = v;
+      // Quand on bascule en fréquence, on force unit en semaine/mois
+      if(v === 'freq' && draft.recur.unit !== 'week' && draft.recur.unit !== 'month'){
+        draft.recur.unit = 'week';
+      }
+      // Quand on revient à période, garder l'unit raisonnable
+      if(v === 'period' && draft.recur.unit !== 'day' && draft.recur.unit !== 'week' && draft.recur.unit !== 'month' && draft.recur.unit !== 'year'){
+        draft.recur.unit = 'week';
+      }
       renderDrawer();
       break;
-    case 'set-recur-custom':
-      if(PRESETS.some(function(p){ return p.n === draft.tousLesNJours; })){
-        draft.tousLesNJours = draft.customN && !PRESETS.some(function(p){ return p.n === draft.customN; })
-          ? draft.customN
-          : 5;
+    case 'set-recur-count':
+      draft.recur.count = parseInt(v,10) || 1;
+      renderDrawer();
+      break;
+    case 'set-recur-unit':
+      draft.recur.unit = v;
+      renderDrawer();
+      break;
+    case 'set-recur-count-custom':
+      // Force une valeur hors-preset pour révéler le champ libre
+      var allowed = (draft.recur.kind === 'period') ? [1,2,3,4,5,6,7,10,14,15] : [1,2,3,4,5,6,7];
+      if(allowed.indexOf(draft.recur.count) !== -1){
+        draft.recur.count = draft.recur.kind === 'period' ? 21 : 10;
       }
       renderDrawer();
       setTimeout(function(){ var f=document.getElementById('fCustomN'); if(f) f.focus(); }, 50);
@@ -1249,11 +1400,12 @@ function bindEvents(){
 
   // Champ custom : MàJ live de la valeur
   document.body.addEventListener('input', function(ev){
-    if(ev.target && ev.target.id === 'fCustomN'){
+    if(ev.target && ev.target.id === 'fCustomN' && draft && draft.recur){
       var n = parseInt(ev.target.value, 10);
-      if(n >= 1 && n <= 365){
-        draft.tousLesNJours = n;
-        document.getElementById('fqsum').textContent = nJoursLabel(n);
+      var max = draft.recur.kind === 'freq' ? 30 : 365;
+      if(n >= 1 && n <= max){
+        draft.recur.count = n;
+        document.getElementById('fqsum').textContent = '✓ ' + recurLabel(draft.recur);
       }
     }
   });

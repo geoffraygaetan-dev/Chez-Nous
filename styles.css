@@ -285,16 +285,31 @@ body.no-late-dot .late-dot{display:none}
 .ebtn .ei{font-size:22px;display:block;margin-bottom:3px}
 .ebtn.on{border-color:var(--dark);background:var(--dark);color:white}
 
-/* Freq picker */
-.fqrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
-.fqbtn{flex:1;min-width:72px;padding:10px 6px;border-radius:12px;border:1.5px solid #E8E0D4;background:white;color:var(--mid);cursor:pointer;font-size:12px;font-weight:600;text-align:center;transition:all .2s}
-.fqbtn.on{background:var(--dark);border-color:var(--dark);color:white}
-.fqcrow{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
-.fqcbtns{display:flex;gap:6px;flex-wrap:wrap}
-.fqclabel{font-size:12px;color:var(--mid);font-weight:600;white-space:nowrap}
-.fqcbtn{width:38px;height:38px;border-radius:50%;border:1.5px solid #E8E0D4;background:white;color:var(--mid);cursor:pointer;font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;transition:all .2s}
-.fqcbtn.on{background:var(--moi);border-color:var(--moi);color:white}
-.fqsum{background:white;border:1.5px solid #E8E0D4;border-radius:10px;padding:10px 12px;font-size:13px;color:var(--ink);font-weight:600;text-align:center;margin-top:10px}
+/* Récurrence riche : Périodique / Fréquence */
+.fqrow{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
+
+/* Toggle Périodique / Fréquence */
+.rk-toggle{display:flex;background:var(--warm);border-radius:12px;padding:3px;gap:3px;margin-bottom:4px}
+.rk-btn{flex:1;padding:10px 8px;background:transparent;border:none;border-radius:10px;font-size:13px;font-weight:700;color:var(--mid);cursor:pointer;transition:all .2s;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.rk-btn.on{background:var(--dark);color:white;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+
+.rk-label{font-size:11px;font-weight:800;color:var(--mid);letter-spacing:.06em;text-transform:uppercase;margin:6px 4px 0}
+
+/* Boutons nombres */
+.rk-counts{display:flex;gap:5px;flex-wrap:wrap}
+.rk-num{min-width:38px;height:38px;padding:0 8px;border-radius:50%;border:1.5px solid #E8E0D4;background:white;color:var(--ink);font-size:14px;font-weight:800;cursor:pointer;transition:all .15s;touch-action:manipulation;-webkit-tap-highlight-color:transparent;display:inline-flex;align-items:center;justify-content:center}
+.rk-num.on{background:var(--moi);border-color:var(--moi);color:white;box-shadow:0 2px 8px rgba(158,107,69,.30)}
+.rk-num:active{transform:none;background:var(--warm-2)}
+.rk-num.on:active{background:var(--moi)}
+.rk-num.rk-more{font-size:18px;color:var(--soft);font-weight:700}
+
+/* Unités jour/semaine/mois/an */
+.rk-units{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.rk-unit{flex:1;min-width:70px;padding:10px 8px;border-radius:12px;border:1.5px solid #E8E0D4;background:white;color:var(--mid);font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.rk-unit.on{background:var(--dark);border-color:var(--dark);color:white}
+
+/* Résumé */
+.fqsum{background:linear-gradient(135deg,rgba(158,107,69,.08),rgba(143,176,90,.08));border:1.5px solid rgba(158,107,69,.25);border-radius:12px;padding:12px 14px;font-size:14px;color:var(--dark);font-weight:700;text-align:center;margin-top:10px;letter-spacing:-.005em}
 .customwrap{margin-top:8px;padding:10px 12px;background:rgba(255,255,255,.5);border-radius:10px;border:1px dashed #D8CFC4}
 .customwrap .flabel{margin-top:0;margin-bottom:6px}
 
