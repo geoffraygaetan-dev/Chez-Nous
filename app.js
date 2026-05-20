@@ -406,6 +406,7 @@ function catPills(){
     html += '<button type="button" class="cp'+(filtreCat===c?' on':'')+'" data-action="set-category" data-value="'+c+'">'+info.e+' '+info.n+'<span class="cpn">'+(cnt[c]||0)+'</span></button>';
   });
   document.getElementById('catRow').innerHTML = html;
+  bindActions(document.getElementById('catRow'));
 }
 
 // ----- Carte tâche (ultra-compact + compteur du mois) ---------------------
@@ -430,44 +431,61 @@ function carteHtml(t){
   else classes += ' upcoming';
 
   var color = qcls === 'g' ? '#9E6B45' : '#8FB05A';
-  var R = 16, C = (2*Math.PI*R).toFixed(2);
+  var R = 14, C = (2*Math.PI*R).toFixed(2);
   var ringOffset = (late || today) ? '0' : C;
-  var ringIcon = late ? '!' : '';
+  var ringIcon = late ? '!' : (today ? '' : '');
 
-  var dueText = dueLabel(t);
-  var dueCls = late ? 'late' : today ? 'today' : 'soon';
   var dot = late ? '<span class="late-dot" aria-hidden="true"></span>' : '';
 
-  // Compteur du mois (30 derniers jours)
-  var nMois = countThisMonth(t.id);
-  var countHtml = nMois > 0
-    ? '<span class="meta-sep">·</span><span class="meta-count" title="fois faite dans les 30 derniers jours">×'+nMois+' / mois</span>'
-    : '';
+  // Badge de retard : chip rouge bien lisible (remplace l'ancien texte meta-due)
+  var lateBadge = '';
+  if(late){
+    var n = -d;
+    var heavy = n >= 7 ? ' heavy' : '';
+    var label = n === 1 ? 'depuis 1 j' : 'depuis ' + n + ' j';
+    lateBadge = '<span class="late-chip'+heavy+'">'+label+'</span>';
+  } else if(today){
+    lateBadge = '<span class="today-chip">Aujourd\'hui</span>';
+  }
 
   // Icône catégorie discrète devant le titre
   var info = CATS[t.cat] || {n:'',e:''};
   var catIco = info.e ? '<span class="cat-ico" aria-hidden="true">'+info.e+'</span>' : '';
 
+  // Ligne meta : prénom + fréquence (échéance déjà dans le badge si late/today,
+  // sinon on l'affiche)
+  var dueInline = '';
+  if(!late && !today){
+    if(d === 1) dueInline = '<span class="meta-sep">·</span><span class="meta-due soon">demain</span>';
+    else if(d <= 7) dueInline = '<span class="meta-sep">·</span><span class="meta-due soon">dans '+d+' j</span>';
+    else {
+      var due = dueDate(t);
+      var jours = ['dim.','lun.','mar.','mer.','jeu.','ven.','sam.'];
+      dueInline = '<span class="meta-sep">·</span><span class="meta-due soon">'+jours[due.getDay()]+' '+due.getDate()+'</span>';
+    }
+  }
+
   return '<article class="'+classes+'" data-id="'+t.id+'">'
     + '<div class="tc-strip"></div>'
     + dot
     + '<button type="button" class="tc-check" data-action="check-task" data-id="'+t.id+'" aria-label="Valider : '+escapeHtml(t.titre)+'">'
-    +   '<svg class="ring" width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">'
-    +     '<circle class="ring-bg" cx="18" cy="18" r="'+R+'" fill="none" stroke-width="2.5"/>'
-    +     '<circle class="ring-fill" cx="18" cy="18" r="'+R+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="'+C+'" stroke-dashoffset="'+ringOffset+'" transform="rotate(-90 18 18)"/>'
+    +   '<svg class="ring" width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">'
+    +     '<circle class="ring-bg" cx="16" cy="16" r="'+R+'" fill="none" stroke-width="2.5"/>'
+    +     '<circle class="ring-fill" cx="16" cy="16" r="'+R+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="'+C+'" stroke-dashoffset="'+ringOffset+'" transform="rotate(-90 16 16)"/>'
     +   '</svg>'
     +   '<span class="ring-icon">'+ringIcon+'</span>'
     +   '<span class="ring-tick" aria-hidden="true">✓</span>'
     + '</button>'
     + '<div class="tc-body">'
-    +   '<div class="tc-title">'+catIco+escapeHtml(t.titre)+'</div>'
+    +   '<div class="tc-titlerow">'
+    +     '<div class="tc-title">'+catIco+escapeHtml(t.titre)+'</div>'
+    +     lateBadge
+    +   '</div>'
     +   '<div class="tc-meta">'
     +     '<span class="meta-who '+qcls+'">'+(qcls==='g'?'🤎':'💚')+' '+courtU(t.qui)+'</span>'
     +     '<span class="meta-sep">·</span>'
-    +     '<span class="meta-due '+dueCls+'">'+dueText+'</span>'
-    +     '<span class="meta-sep">·</span>'
     +     '<span class="meta-freq">'+nJoursLabelShort(t.tousLesNJours)+'</span>'
-    +     countHtml
+    +     dueInline
     +   '</div>'
     + '</div>'
     + '<button type="button" class="menu-btn" data-action="open-menu" data-id="'+t.id+'" aria-label="Menu">⋯</button>'
@@ -518,29 +536,7 @@ function liste(){
   }
 
   document.getElementById('listMain').innerHTML = html;
-
-  // FIX BLINDÉ : binding DIRECT sur chaque bouton après injection HTML.
-  // Garantit que le clic fonctionne même si la délégation body échouait.
-  var checks = document.querySelectorAll('#listMain .tc-check');
-  for(var i=0;i<checks.length;i++){
-    (function(b){
-      b.addEventListener('click', function(ev){
-        ev.preventDefault();
-        ev.stopPropagation();
-        checkTask(b.dataset.id);
-      });
-    })(checks[i]);
-  }
-  var menus = document.querySelectorAll('#listMain .menu-btn');
-  for(var j=0;j<menus.length;j++){
-    (function(b){
-      b.addEventListener('click', function(ev){
-        ev.preventDefault();
-        ev.stopPropagation();
-        openMenu(b.dataset.id);
-      });
-    })(menus[j]);
-  }
+  bindActions(document.getElementById('listMain'));
 }
 
 function listeHist(){
@@ -713,6 +709,7 @@ function renderDrawer(){
     eg += '<button type="button" class="ebtn'+(draft.cat===c?' on':'')+'" data-action="set-cat" data-value="'+c+'"><span class="ei">'+info.e+'</span>'+info.n+'</button>';
   });
   document.getElementById('egrid').innerHTML = eg;
+  bindActions(document.getElementById('egrid'));
 
   // Récurrence presets + custom
   var fr = '';
@@ -723,6 +720,7 @@ function renderDrawer(){
   var isCustom = !PRESETS.some(function(p){ return p.n === draft.tousLesNJours; });
   fr += '<button type="button" class="fqbtn'+(isCustom?' on':'')+'" data-action="set-recur-custom">Personnalisé…</button>';
   document.getElementById('fqrow').innerHTML = fr;
+  bindActions(document.getElementById('fqrow'));
 
   // Champ custom
   var customWrap = document.getElementById('customWrap');
@@ -1082,58 +1080,90 @@ function setUserFilter(v){
 }
 function setCategory(v){ filtreCat = v; afficher(); }
 
+// ----- Dispatcher d'actions ---------------------------------------------
+// Centralisé : le routage des data-action est unique et utilisé à la fois par
+// la délégation body ET par les listeners directs (bindActions). Ainsi peu
+// importe quelle voie déclenche le clic, l'effet est identique.
+function dispatchAction(btn, ev){
+  if(!btn) return;
+  var a = btn.dataset.action;
+  var v = btn.dataset.value;
+  var id = btn.dataset.id;
+  if(ev){ try{ ev.preventDefault(); }catch(e){} try{ ev.stopPropagation(); }catch(e){} }
+
+  switch(a){
+    case 'choose-profile': chooseProfile(v); break;
+    case 'show-welcome': showWelcome(); break;
+    case 'install-app': installerApp(); break;
+    case 'enable-notifications': activerNotif(); break;
+    case 'set-tab': setTab(v); break;
+    case 'set-user-filter': setUserFilter(v); break;
+    case 'set-category': setCategory(v); break;
+    case 'check-task': checkTask(id); break;
+    case 'open-menu': openMenu(id); break;
+    case 'close-menu': closeMenu(); break;
+    case 'menu-edit':   { var mid = pendingMenuId; closeMenu(); openDrawer(mid); break; }
+    case 'menu-undo':   { var mid2 = pendingMenuId; closeMenu(); decrementTask(mid2); break; }
+    case 'menu-delete': { var mid3 = pendingMenuId; closeMenu(); askDelete(mid3); break; }
+    case 'close-confirm': closeConfirm(); break;
+    case 'confirm-delete': if(pendingDeleteId){ deleteTask(pendingDeleteId); closeConfirm(); toast('Tâche supprimée'); } break;
+    case 'open-drawer': openDrawer(null); break;
+    case 'close-drawer': closeDrawer(); break;
+    case 'save-task': saveTask(); break;
+    case 'set-cat': draft.cat = v; renderDrawer(); break;
+    case 'set-recur':
+      draft.tousLesNJours = parseInt(v,10) || 7;
+      renderDrawer();
+      break;
+    case 'set-recur-custom':
+      if(PRESETS.some(function(p){ return p.n === draft.tousLesNJours; })){
+        draft.tousLesNJours = draft.customN && !PRESETS.some(function(p){ return p.n === draft.customN; })
+          ? draft.customN
+          : 5;
+      }
+      renderDrawer();
+      setTimeout(function(){ var f=document.getElementById('fCustomN'); if(f) f.focus(); }, 50);
+      break;
+    case 'set-mode': draft.mode = v; renderDrawer(); break;
+    case 'set-start': draft.debut = v; renderDrawer(); break;
+    case 'open-settings': openSettings(); break;
+    case 'close-settings': closeSettings(); break;
+    case 'save-settings': persistSettings(); break;
+    case 'change-profile-settings': closeSettings(); showWelcome(); break;
+    case 'set-notif-scope': setNotifScope(v); break;
+    case 'test-notif': testNotification(); break;
+  }
+}
+
+// Attache des listeners DIRECTS sur tous les [data-action] non encore bindés
+// dans le sous-arbre fourni. Le flag data-bound évite tout double-fire.
+// Cette approche est la plus robuste sur Android où la délégation body peut
+// occasionnellement rater (overlays, gestes système, etc.).
+function bindActions(root){
+  root = root || document.body;
+  var nodes = root.querySelectorAll('[data-action]');
+  for(var i=0;i<nodes.length;i++){
+    var n = nodes[i];
+    if(n.dataset.bound === '1') continue;
+    n.dataset.bound = '1';
+    n.addEventListener('click', (function(el){
+      return function(ev){ dispatchAction(el, ev); };
+    })(n));
+  }
+}
+
 function bindEvents(){
+  // Bind direct sur tous les [data-action] présents au boot (welcome, topbar,
+  // tabs, FAB, overlays menu/confirm, drawer, settings).
+  bindActions(document.body);
+
+  // Filet de sécurité : la délégation body reste active. data-bound empêche
+  // le double-déclenchement quand un listener direct existe déjà.
   document.body.addEventListener('click', function(ev){
     var btn = ev.target.closest('[data-action]');
     if(!btn) return;
-    var a = btn.dataset.action;
-    var v = btn.dataset.value;
-    var id = btn.dataset.id;
-    ev.preventDefault();
-
-    switch(a){
-      case 'choose-profile': chooseProfile(v); break;
-      case 'show-welcome': showWelcome(); break;
-      case 'install-app': installerApp(); break;
-      case 'enable-notifications': activerNotif(); break;
-      case 'set-tab': setTab(v); break;
-      case 'set-user-filter': setUserFilter(v); break;
-      case 'set-category': setCategory(v); break;
-      case 'check-task': checkTask(id); break;
-      case 'open-menu': openMenu(id); break;
-      case 'close-menu': closeMenu(); break;
-      case 'menu-edit':   { var mid = pendingMenuId; closeMenu(); openDrawer(mid); break; }
-      case 'menu-undo':   { var mid2 = pendingMenuId; closeMenu(); decrementTask(mid2); break; }
-      case 'menu-delete': { var mid3 = pendingMenuId; closeMenu(); askDelete(mid3); break; }
-      case 'close-confirm': closeConfirm(); break;
-      case 'confirm-delete': if(pendingDeleteId){ deleteTask(pendingDeleteId); closeConfirm(); toast('Tâche supprimée'); } break;
-      case 'open-drawer': openDrawer(null); break;
-      case 'close-drawer': closeDrawer(); break;
-      case 'save-task': saveTask(); break;
-      case 'set-cat': draft.cat = v; renderDrawer(); break;
-      case 'set-recur':
-        draft.tousLesNJours = parseInt(v,10) || 7;
-        renderDrawer();
-        break;
-      case 'set-recur-custom':
-        // Bascule en mode custom : on initialise avec une valeur non-preset
-        if(PRESETS.some(function(p){ return p.n === draft.tousLesNJours; })){
-          draft.tousLesNJours = draft.customN && !PRESETS.some(function(p){ return p.n === draft.customN; })
-            ? draft.customN
-            : 5;
-        }
-        renderDrawer();
-        setTimeout(function(){ var f=document.getElementById('fCustomN'); if(f) f.focus(); }, 50);
-        break;
-      case 'set-mode': draft.mode = v; renderDrawer(); break;
-      case 'set-start': draft.debut = v; renderDrawer(); break;
-      case 'open-settings': openSettings(); break;
-      case 'close-settings': closeSettings(); break;
-      case 'save-settings': persistSettings(); break;
-      case 'change-profile-settings': closeSettings(); showWelcome(); break;
-      case 'set-notif-scope': setNotifScope(v); break;
-      case 'test-notif': testNotification(); break;
-    }
+    if(btn.dataset.bound === '1') return; // déjà géré par le listener direct
+    dispatchAction(btn, ev);
   });
 
   // Champ custom : MàJ live de la valeur
