@@ -409,6 +409,60 @@ function catPills(){
   bindActions(document.getElementById('catRow'));
 }
 
+// ----- Auto-emoji depuis le titre -----------------------------------------
+// Détection par mots-clés : on cherche le premier match dans la liste, et on
+// retombe sur un emoji par défaut. Liste ordonnée du plus spécifique au plus
+// générique (ex: "laver le sol" avant "laver" tout court).
+var EMOJI_RULES = [
+  // Sols & sols spécifiques
+  {re:/\b(aspi(rateur)?|aspirer)\b/i, e:'🧹'},
+  {re:/\b(serpil(l)?i[èe]re|laver le sol|nettoyer le sol|sol)\b/i, e:'🧽'},
+  {re:/\b(balai|balayer)\b/i, e:'🧹'},
+  // Cuisine
+  {re:/\b(vaisselle|lave[- ]?vaisselle)\b/i, e:'🍽️'},
+  {re:/\b(frigo|r[ée]frig[ée]rateur|cong[ée]lateur)\b/i, e:'🧊'},
+  {re:/\b(cuisine|cuisiner|cuisini[èe]re|fourneau|four|plaque)\b/i, e:'🍳'},
+  {re:/\b(micro[- ]?ondes?)\b/i, e:'📡'},
+  // Linge
+  {re:/\b(linge|lessive|machine|laver le linge)\b/i, e:'👕'},
+  {re:/\b(repasser|fer ?[àa] ?repasser|repassage)\b/i, e:'👔'},
+  {re:/\b(draps?|lit|matelas|literie|changer les draps)\b/i, e:'🛏️'},
+  {re:/\b(serviettes?)\b/i, e:'🛁'},
+  // Salle de bain & WC
+  {re:/\b(wc|toilettes?|cuvette)\b/i, e:'🚽'},
+  {re:/\b(douche|baignoire|salle de bain|sdb|robinet)\b/i, e:'🚿'},
+  {re:/\b(lavabo|miroir)\b/i, e:'🪞'},
+  // Animaux
+  {re:/\b(liti[èe]re|chat|gamelle|croquettes?)\b/i, e:'🐱'},
+  {re:/\b(chien|promener|balade)\b/i, e:'🐕'},
+  // Déchets
+  {re:/\b(poubelles?|d[ée]chets?|ordures?|tri|recyclage)\b/i, e:'🗑️'},
+  // Courses & admin
+  {re:/\b(courses|march[ée]|supermarch[ée]|drive)\b/i, e:'🛒'},
+  {re:/\b(facture|imp[ôo]ts|admin|paperasse|courrier)\b/i, e:'📋'},
+  // Jardin & extérieur
+  {re:/\b(jardin|tondre|tondeuse|pelouse|gazon)\b/i, e:'🌿'},
+  {re:/\b(plantes?|arroser|fleurs?)\b/i, e:'🪴'},
+  {re:/\b(terrasse|balcon)\b/i, e:'🪑'},
+  // Bricolage
+  {re:/\b(bricolage|r[ée]parer|r[ée]paration|visser|d[ée]visser)\b/i, e:'🔧'},
+  // Voiture
+  {re:/\b(voiture|auto|garage)\b/i, e:'🚗'},
+  // Génériques
+  {re:/\b(nettoy(er|age)|laver|d[ée]poussi[èe]rer|d[ée]poussi[ée]rage)\b/i, e:'✨'},
+  {re:/\b(ranger|rangement|trier)\b/i, e:'📦'},
+  {re:/\b(canap[ée]|fauteuil|salon)\b/i, e:'🛋️'},
+  {re:/\b(chambre)\b/i, e:'🛏️'}
+];
+
+function tireEmoji(titre){
+  if(!titre) return '✓';
+  for(var i=0;i<EMOJI_RULES.length;i++){
+    if(EMOJI_RULES[i].re.test(titre)) return EMOJI_RULES[i].e;
+  }
+  return '✓'; // fallback discret
+}
+
 // ----- Carte tâche (ultra-compact + compteur du mois) ---------------------
 function countThisMonth(taskId){
   var cut = Date.now() - 30*86400000;
@@ -448,21 +502,27 @@ function carteHtml(t){
     lateBadge = '<span class="today-chip">Aujourd\'hui</span>';
   }
 
-  // Icône catégorie discrète devant le titre
-  var info = CATS[t.cat] || {n:'',e:''};
-  var catIco = info.e ? '<span class="cat-ico" aria-hidden="true">'+info.e+'</span>' : '';
+  // Emoji auto-détecté depuis le titre (remplace les catégories)
+  var emoji = tireEmoji(t.titre);
+  var catIco = '<span class="cat-ico" aria-hidden="true">'+emoji+'</span>';
 
-  // Ligne meta : prénom + fréquence (échéance déjà dans le badge si late/today,
-  // sinon on l'affiche)
-  var dueInline = '';
-  if(!late && !today){
-    if(d === 1) dueInline = '<span class="meta-sep">·</span><span class="meta-due soon">demain</span>';
-    else if(d <= 7) dueInline = '<span class="meta-sep">·</span><span class="meta-due soon">dans '+d+' j</span>';
+  // Ligne meta selon la section :
+  // - late/today : prénom · fréquence (l'échéance est dans le chip)
+  // - upcoming   : prénom · "dans X j" (on supprime la fréquence pour éviter
+  //                la troncature et garder l'info la plus utile)
+  var metaTail = '';
+  if(late || today){
+    metaTail = '<span class="meta-sep">·</span><span class="meta-freq">'+nJoursLabelShort(t.tousLesNJours)+'</span>';
+  } else {
+    var dueLab;
+    if(d === 1) dueLab = 'demain';
+    else if(d <= 7) dueLab = 'dans '+d+' j';
     else {
       var due = dueDate(t);
       var jours = ['dim.','lun.','mar.','mer.','jeu.','ven.','sam.'];
-      dueInline = '<span class="meta-sep">·</span><span class="meta-due soon">'+jours[due.getDay()]+' '+due.getDate()+'</span>';
+      dueLab = jours[due.getDay()]+' '+due.getDate();
     }
+    metaTail = '<span class="meta-sep">·</span><span class="meta-due soon">'+dueLab+'</span>';
   }
 
   return '<article class="'+classes+'" data-id="'+t.id+'">'
@@ -483,9 +543,7 @@ function carteHtml(t){
     +   '</div>'
     +   '<div class="tc-meta">'
     +     '<span class="meta-who '+qcls+'">'+(qcls==='g'?'🤎':'💚')+' '+courtU(t.qui)+'</span>'
-    +     '<span class="meta-sep">·</span>'
-    +     '<span class="meta-freq">'+nJoursLabelShort(t.tousLesNJours)+'</span>'
-    +     dueInline
+    +     metaTail
     +   '</div>'
     + '</div>'
     + '<button type="button" class="menu-btn" data-action="open-menu" data-id="'+t.id+'" aria-label="Menu">⋯</button>'
@@ -566,10 +624,10 @@ function listeHist(){
       var qcls = h.qui === 'gaetan' ? 'g' : 'a';
       var t = new Date(h.at);
       var heure = pad(t.getHours())+':'+pad(t.getMinutes());
-      var info = CATS[h.cat] || {n:'',e:'•'};
+      var hemo = tireEmoji(h.titre);
       html += '<div class="hcard '+qcls+'">'
-        + '<div><div class="hcard-title">'+escapeHtml(h.titre)+'</div>'
-        + '<div class="hcard-meta">'+info.e+' '+info.n+' · '+heure+'</div></div>'
+        + '<div><div class="hcard-title">'+hemo+' '+escapeHtml(h.titre)+'</div>'
+        + '<div class="hcard-meta">'+heure+'</div></div>'
         + '<div class="hcard-user '+qcls+'">'+(qcls==='g'?'🤎':'💚')+' '+courtU(h.qui)+'</div>'
         + '</div>';
     });
@@ -1084,8 +1142,16 @@ function setCategory(v){ filtreCat = v; afficher(); }
 // Centralisé : le routage des data-action est unique et utilisé à la fois par
 // la délégation body ET par les listeners directs (bindActions). Ainsi peu
 // importe quelle voie déclenche le clic, l'effet est identique.
+// Garde globale : après un fire, on ignore tout pointerdown pendant 350 ms
+// pour éviter qu'une action qui ferme un overlay n'en déclenche une autre
+// sur l'élément révélé en dessous (cas typique Android : tap sur "Supprimer"
+// du dialog → pointerup + click "fantôme" sur la carte derrière).
+var _lastDispatchAt = 0;
 function dispatchAction(btn, ev){
   if(!btn) return;
+  var now = Date.now();
+  if(ev && ev.type === 'pointerdown' && (now - _lastDispatchAt < 350)) return;
+  _lastDispatchAt = now;
   var a = btn.dataset.action;
   var v = btn.dataset.value;
   var id = btn.dataset.id;
@@ -1135,10 +1201,11 @@ function dispatchAction(btn, ev){
   }
 }
 
-// Attache des listeners DIRECTS sur tous les [data-action] non encore bindés
-// dans le sous-arbre fourni. Le flag data-bound évite tout double-fire.
-// Cette approche est la plus robuste sur Android où la délégation body peut
-// occasionnellement rater (overlays, gestes système, etc.).
+// Attache des listeners DIRECTS sur tous les [data-action] non encore bindés.
+// On utilise POINTERDOWN comme déclencheur principal (instantané sur Android,
+// non annulé par un transform:scale du bouton sous le doigt). Le click reste
+// listener de secours pour les souris classiques. Un flag par élément
+// (data-firing) déduplique les deux voies pendant 600 ms.
 function bindActions(root){
   root = root || document.body;
   var nodes = root.querySelectorAll('[data-action]');
@@ -1146,9 +1213,23 @@ function bindActions(root){
     var n = nodes[i];
     if(n.dataset.bound === '1') continue;
     n.dataset.bound = '1';
-    n.addEventListener('click', (function(el){
-      return function(ev){ dispatchAction(el, ev); };
-    })(n));
+    var fire = (function(el){
+      return function(ev){
+        if(el.dataset.firing === '1') return;
+        el.dataset.firing = '1';
+        setTimeout(function(){ el.dataset.firing = '0'; }, 600);
+        dispatchAction(el, ev);
+      };
+    })(n);
+    // pointerdown : Android tactile + souris desktop, fire immédiat
+    if(window.PointerEvent){
+      n.addEventListener('pointerdown', fire);
+    } else {
+      // Vieux navigateurs sans PointerEvent : click + touchstart
+      n.addEventListener('touchstart', fire, {passive:false});
+    }
+    // click : filet de sécurité (clavier, accessibilité, navigateurs anciens)
+    n.addEventListener('click', fire);
   }
 }
 

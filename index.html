@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=8">
+<link rel="stylesheet" href="styles.css?v=9">
 </head>
 <body>
 
@@ -102,8 +102,6 @@
       <button class="ufb" id="ufG" data-action="set-user-filter" data-value="gaetan">🤎 Gaetan</button>
       <button class="ufb" id="ufA" data-action="set-user-filter" data-value="amandine">💚 Amandine</button>
     </div>
-    <div class="cats"><div class="cat-row" id="catRow"></div></div>
-
     <div id="listMain"></div>
   </div>
 
@@ -126,9 +124,8 @@
 
 <div class="overlay" id="menuOv">
   <div class="menubox">
-    <button class="menu-item" data-action="menu-edit">✏️ Modifier</button>
-    <button class="menu-item" data-action="menu-undo">↩️ Décrémenter (annuler la dernière)</button>
-    <button class="menu-item danger" data-action="menu-delete">🗑️ Supprimer</button>
+    <button class="menu-item primary" data-action="menu-edit"><span class="mi-ico">✏️</span><span class="mi-lab">Modifier la tâche</span></button>
+    <button class="menu-item danger" data-action="menu-delete"><span class="mi-ico">🗑️</span><span class="mi-lab">Supprimer</span></button>
     <button class="menu-item cancel" data-action="close-menu">Annuler</button>
   </div>
 </div>
@@ -141,8 +138,7 @@
     <label class="flabel">Titre</label>
     <input class="finput" type="text" id="fTitre" placeholder="Ex : Passer l'aspirateur…" maxlength="60">
 
-    <label class="flabel">Catégorie</label>
-    <div class="egrid" id="egrid"></div>
+    <div class="egrid is-hidden" id="egrid"></div>
 
     <label class="flabel">Récurrence</label>
     <div class="fqrow" id="fqrow"></div>
@@ -265,7 +261,7 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="config.js?v=8" defer></script>
-<script src="app.js?v=8" defer></script>
+<script src="config.js?v=9" defer></script>
+<script src="app.js?v=9" defer></script>
 </body>
 </html>
